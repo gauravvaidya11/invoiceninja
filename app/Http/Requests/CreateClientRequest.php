@@ -1,9 +1,10 @@
-<?php namespace app\Http\Requests;
+<?php
 
-use App\Http\Requests\Request;
-use Illuminate\Validation\Factory;
+namespace App\Http\Requests;
 
-class CreateClientRequest extends Request
+use App\Models\Client;
+
+class CreateClientRequest extends ClientRequest
 {
     /**
      * Determine if the user is authorized to make this request.
@@ -12,7 +13,7 @@ class CreateClientRequest extends Request
      */
     public function authorize()
     {
-        return true;
+        return $this->user()->can('create', Client::class);
     }
 
     /**
@@ -22,25 +23,12 @@ class CreateClientRequest extends Request
      */
     public function rules()
     {
-        return [
-            'contacts' => 'valid_contacts',
-        ];
-    }
+        $rules = [];
 
-    public function validator($factory)
-    {
-        // support submiting the form with a single contact record
-        $input = $this->input();
-        if (isset($input['contact'])) {
-            $input['contacts'] = [$input['contact']];
-            unset($input['contact']);
-            $this->replace($input);
+        if ($this->user()->account->client_number_counter) {
+            $rules['id_number'] = 'unique:clients,id_number,,id,account_id,' . $this->user()->account_id;
         }
 
-        return $factory->make(
-            $this->input(),
-            $this->container->call([$this, 'rules']),
-            $this->messages()
-        );
+        return $rules;
     }
 }

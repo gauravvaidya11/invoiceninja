@@ -1,22 +1,24 @@
-<?php namespace App\Events;
+<?php
 
-use App\Events\Event;
+namespace App\Events;
 
 use Illuminate\Queue\SerializesModels;
 
-class QuoteWasDeleted extends Event {
-
-	use SerializesModels;
+/**
+ * Class QuoteWasDeleted.
+ */
+class QuoteWasDeleted extends Event
+{
+    use SerializesModels;
     public $quote;
-    
-	/**
-	 * Create a new event instance.
-	 *
-	 * @return void
-	 */
+
+    /**
+     * Create a new event instance.
+     *
+     * @param $quote
+     */
     public function __construct($quote)
     {
         $this->quote = $quote;
     }
-
 }

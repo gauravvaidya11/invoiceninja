@@ -1,68 +1,192 @@
-<?php namespace App\Http\Controllers;
+<?php
 
-use App\Services\TaxRateService;
-use App\Ninja\Repositories\TaxRateRepository;
-use App\Ninja\Transformers\TaxRateTransformer;
-use Auth;
-use App\Models\TaxRate;
+namespace App\Http\Controllers;
 
+use App\Http\Requests\TaxRateRequest;
 use App\Http\Requests\CreateTaxRateRequest;
 use App\Http\Requests\UpdateTaxRateRequest;
+use App\Models\TaxRate;
+use App\Ninja\Repositories\TaxRateRepository;
 
 class TaxRateApiController extends BaseAPIController
 {
-    protected $taxRateService;
+    /**
+     * @var TaxRateRepository
+     */
     protected $taxRateRepo;
 
-    public function __construct(TaxRateService $taxRateService, TaxRateRepository $taxRateRepo)
+    /**
+     * @var string
+     */
+    protected $entityType = ENTITY_TAX_RATE;
+
+    /**
+     * TaxRateApiController constructor.
+     *
+     * @param TaxRateRepository $taxRateRepo
+     */
+    public function __construct(TaxRateRepository $taxRateRepo)
     {
         parent::__construct();
 
-        $this->taxRateService = $taxRateService;
         $this->taxRateRepo = $taxRateRepo;
     }
 
+    /**
+     * @SWG\Get(
+     *   path="/tax_rates",
+     *   summary="List tax rates",
+     *   operationId="listTaxRates",
+     *   tags={"tax_rate"},
+     *   @SWG\Response(
+     *     response=200,
+     *     description="A list of tax rates",
+     *      @SWG\Schema(type="array", @SWG\Items(ref="#/definitions/TaxRate"))
+     *   ),
+     *   @SWG\Response(
+     *     response="default",
+     *     description="an ""unexpected"" error"
+     *   )
+     * )
+     */
     public function index()
     {
-        $taxRates = TaxRate::scope()->withTrashed();
-        $taxRates = $taxRates->paginate();
+        $taxRates = TaxRate::scope()
+                        ->withTrashed()
+                        ->orderBy('created_at', 'desc');
 
-        $paginator = TaxRate::scope()->withTrashed()->paginate();
-
-        $transformer = new TaxRateTransformer(Auth::user()->account, $this->serializer);
-        $data = $this->createCollection($taxRates, $transformer, 'tax_rates', $paginator);
-
-        return $this->response($data);
+        return $this->listResponse($taxRates);
     }
 
+    /**
+     * @SWG\Get(
+     *   path="/tax_rates/{tax_rate_id}",
+     *   summary="Retrieve a tax rate",
+     *   operationId="getTaxRate",
+     *   tags={"tax_rate"},
+     *   @SWG\Parameter(
+     *     in="path",
+     *     name="tax_rate_id",
+     *     type="integer",
+     *     required=true
+     *   ),
+     *   @SWG\Response(
+     *     response=200,
+     *     description="A single tax rate",
+     *      @SWG\Schema(type="object", @SWG\Items(ref="#/definitions/TaxRate"))
+     *   ),
+     *   @SWG\Response(
+     *     response="default",
+     *     description="an ""unexpected"" error"
+     *   )
+     * )
+     */
+    public function show(TaxRateRequest $request)
+    {
+        return $this->itemResponse($request->entity());
+    }
+
+    /**
+     * @SWG\Post(
+     *   path="/tax_rates",
+     *   summary="Create a tax rate",
+     *   operationId="createTaxRate",
+     *   tags={"tax_rate"},
+     *   @SWG\Parameter(
+     *     in="body",
+     *     name="tax_rate",
+     *     @SWG\Schema(ref="#/definitions/TaxRate")
+     *   ),
+     *   @SWG\Response(
+     *     response=200,
+     *     description="New tax rate",
+     *      @SWG\Schema(type="object", @SWG\Items(ref="#/definitions/TaxRate"))
+     *   ),
+     *   @SWG\Response(
+     *     response="default",
+     *     description="an ""unexpected"" error"
+     *   )
+     * )
+     */
     public function store(CreateTaxRateRequest $request)
     {
-        return $this->save($request);
+        $taxRate = $this->taxRateRepo->save($request->input());
+
+        return $this->itemResponse($taxRate);
     }
 
-    public function update(UpdateTaxRateRequest $request, $taxRatePublicId)
+    /**
+     * @SWG\Put(
+     *   path="/tax_rates/{tax_rate_id}",
+     *   summary="Update a tax rate",
+     *   operationId="updateTaxRate",
+     *   tags={"tax_rate"},
+     *   @SWG\Parameter(
+     *     in="path",
+     *     name="tax_rate_id",
+     *     type="integer",
+     *     required=true
+     *   ),
+     *   @SWG\Parameter(
+     *     in="body",
+     *     name="tax_rate",
+     *     @SWG\Schema(ref="#/definitions/TaxRate")
+     *   ),
+     *   @SWG\Response(
+     *     response=200,
+     *     description="Updated tax rate",
+     *      @SWG\Schema(type="object", @SWG\Items(ref="#/definitions/TaxRate"))
+     *   ),
+     *   @SWG\Response(
+     *     response="default",
+     *     description="an ""unexpected"" error"
+     *   )
+     * )
+     *
+     * @param mixed $publicId
+     */
+    public function update(UpdateTaxRateRequest $request, $publicId)
     {
-        $taxRate = TaxRate::scope($taxRatePublicId)->firstOrFail();
-
-        if ($request->action == ACTION_ARCHIVE) {
-            $this->taxRateRepo->archive($taxRate);
-
-            $transformer = new TaxRateTransformer(Auth::user()->account, $request->serializer);
-            $data = $this->createItem($taxRate, $transformer, 'tax_rates');
-
-            return $this->response($data);
-        } else {
-            return $this->save($request, $taxRate);
+        if ($request->action) {
+            return $this->handleAction($request);
         }
+
+        $data = $request->input();
+        $data['public_id'] = $publicId;
+        $taxRate = $this->taxRateRepo->save($data, $request->entity());
+
+        return $this->itemResponse($taxRate);
     }
 
-    private function save($request, $taxRate = false)
+    /**
+     * @SWG\Delete(
+     *   path="/tax_rates/{tax_rate_id}",
+     *   summary="Delete a tax rate",
+     *   operationId="deleteTaxRate",
+     *   tags={"tax_rate"},
+     *   @SWG\Parameter(
+     *     in="path",
+     *     name="tax_rate_id",
+     *     type="integer",
+     *     required=true
+     *   ),
+     *   @SWG\Response(
+     *     response=200,
+     *     description="Deleted tax rate",
+     *      @SWG\Schema(type="object", @SWG\Items(ref="#/definitions/TaxRate"))
+     *   ),
+     *   @SWG\Response(
+     *     response="default",
+     *     description="an ""unexpected"" error"
+     *   )
+     * )
+     */
+    public function destroy(UpdateTaxRateRequest $request)
     {
-        $taxRate = $this->taxRateRepo->save($request->input(), $taxRate);
+        $entity = $request->entity();
 
-        $transformer = new TaxRateTransformer(\Auth::user()->account, $request->serializer);
-        $data = $this->createItem($taxRate, $transformer, 'tax_rates');
+        $entity->delete();
 
-        return $this->response($data);
+        return $this->itemResponse($entity);
     }
 }

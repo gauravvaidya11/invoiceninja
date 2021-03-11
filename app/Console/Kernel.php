@@ -1,8 +1,10 @@
-<?php namespace app\Console;
+<?php
 
-use Utils;
+namespace App\Console;
+
 use Illuminate\Console\Scheduling\Schedule;
 use Illuminate\Foundation\Console\Kernel as ConsoleKernel;
+use Utils;
 
 class Kernel extends ConsoleKernel
 {
@@ -13,17 +15,31 @@ class Kernel extends ConsoleKernel
      */
     protected $commands = [
         'App\Console\Commands\SendRecurringInvoices',
+        'App\Console\Commands\RemoveOrphanedDocuments',
         'App\Console\Commands\ResetData',
         'App\Console\Commands\CheckData',
+        'App\Console\Commands\PruneData',
+        'App\Console\Commands\CreateTestData',
+        'App\Console\Commands\CreateLuisData',
         'App\Console\Commands\SendRenewalInvoices',
+        'App\Console\Commands\ChargeRenewalInvoices',
         'App\Console\Commands\SendReminders',
         'App\Console\Commands\TestOFX',
+        'App\Console\Commands\MakeModule',
+        'App\Console\Commands\MakeClass',
+        'App\Console\Commands\InitLookup',
+        'App\Console\Commands\CalculatePayouts',
+        'App\Console\Commands\UpdateKey',
+        'App\Console\Commands\MobileLocalization',
+        'App\Console\Commands\SendOverdueTickets',
+        'App\Console\Commands\MakeModuleSettings',
     ];
 
     /**
      * Define the application's command schedule.
      *
-     * @param  \Illuminate\Console\Scheduling\Schedule $schedule
+     * @param \Illuminate\Console\Scheduling\Schedule $schedule
+     *
      * @return void
      */
     protected function schedule(Schedule $schedule)
@@ -31,21 +47,14 @@ class Kernel extends ConsoleKernel
         $logFile = storage_path() . '/logs/cron.log';
 
         $schedule
-            ->command('ninja:send-invoices --force')
+            ->command('ninja:send-invoices')
             ->sendOutputTo($logFile)
             ->withoutOverlapping()
             ->hourly();
 
         $schedule
-            ->command('ninja:send-reminders --force')
+            ->command('ninja:send-reminders')
             ->sendOutputTo($logFile)
             ->daily();
-
-        if (Utils::isNinja()) {
-            $schedule
-                ->command('ninja:send-renewals --force')
-                ->sendOutputTo($logFile)
-                ->daily();
-        }
     }
 }

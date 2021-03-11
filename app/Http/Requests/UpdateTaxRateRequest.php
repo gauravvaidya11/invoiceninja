@@ -1,11 +1,9 @@
-<?php namespace app\Http\Requests;
+<?php
 
-use App\Http\Requests\Request;
-use Illuminate\Validation\Factory;
+namespace App\Http\Requests;
 
-class UpdateTaxRateRequest extends Request
+class UpdateTaxRateRequest extends TaxRateRequest
 {
-    // Expenses 
     /**
      * Determine if the user is authorized to make this request.
      *
@@ -13,7 +11,7 @@ class UpdateTaxRateRequest extends Request
      */
     public function authorize()
     {
-        return true;
+        return $this->entity() && $this->user()->can('edit', $this->entity());
     }
 
     /**

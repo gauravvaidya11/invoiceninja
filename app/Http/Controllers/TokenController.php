@@ -1,40 +1,60 @@
-<?php namespace App\Http\Controllers;
+<?php
 
-use Auth;
-use Session;
-use DB;
-use Validator;
-use Input;
-use View;
-use Redirect;
-use Datatable;
-use URL;
+namespace App\Http\Controllers;
 
 use App\Models\AccountToken;
 use App\Services\TokenService;
-use App\Ninja\Repositories\AccountRepository;
+use Auth;
+use Input;
+use Redirect;
+use Session;
+use URL;
+use Validator;
+use View;
 
+/**
+ * Class TokenController.
+ */
 class TokenController extends BaseController
 {
+    /**
+     * @var TokenService
+     */
     protected $tokenService;
 
+    /**
+     * TokenController constructor.
+     *
+     * @param TokenService $tokenService
+     */
     public function __construct(TokenService $tokenService)
     {
-        parent::__construct();
+        //parent::__construct();
 
         $this->tokenService = $tokenService;
     }
 
+    /**
+     * @return \Illuminate\Http\RedirectResponse
+     */
     public function index()
     {
         return Redirect::to('settings/' . ACCOUNT_API_TOKENS);
     }
 
+    /**
+     * @return \Illuminate\Http\JsonResponse
+     */
     public function getDatatable()
     {
-        return $this->tokenService->getDatatable(Auth::user()->account_id);
+        return $this->tokenService->getDatatable(Auth::user()->id);
     }
 
+    /**
+     * @param $publicId
+     *
+     * @return \Illuminate\Contracts\View\View
+     */
     public function edit($publicId)
     {
         $token = AccountToken::where('account_id', '=', Auth::user()->account_id)
@@ -50,19 +70,26 @@ class TokenController extends BaseController
         return View::make('accounts.token', $data);
     }
 
+    /**
+     * @param $publicId
+     *
+     * @return \Illuminate\Http\RedirectResponse
+     */
     public function update($publicId)
     {
         return $this->save($publicId);
     }
 
+    /**
+     * @return \Illuminate\Http\RedirectResponse
+     */
     public function store()
     {
         return $this->save();
     }
 
     /**
-     * Displays the form for account creation
-     *
+     * @return \Illuminate\Contracts\View\View
      */
     public function create()
     {
@@ -76,6 +103,9 @@ class TokenController extends BaseController
         return View::make('accounts.token', $data);
     }
 
+    /**
+     * @return \Illuminate\Http\RedirectResponse
+     */
     public function bulk()
     {
         $action = Input::get('bulk_action');
@@ -88,12 +118,13 @@ class TokenController extends BaseController
     }
 
     /**
-     * Stores new account
+     * @param bool $tokenPublicId
      *
+     * @return $this|\Illuminate\Http\RedirectResponse
      */
     public function save($tokenPublicId = false)
     {
-        if (Auth::user()->account->isPro()) {
+        if (Auth::user()->account->hasFeature(FEATURE_API)) {
             $rules = [
                 'name' => 'required',
             ];
@@ -114,7 +145,7 @@ class TokenController extends BaseController
             } else {
                 $token = AccountToken::createNew();
                 $token->name = trim(Input::get('name'));
-                $token->token = str_random(RANDOM_KEY_LENGTH);
+                $token->token = strtolower(str_random(RANDOM_KEY_LENGTH));
             }
 
             $token->save();
@@ -130,5 +161,4 @@ class TokenController extends BaseController
 
         return Redirect::to('settings/' . ACCOUNT_API_TOKENS);
     }
-
 }

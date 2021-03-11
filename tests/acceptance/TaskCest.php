@@ -1,6 +1,5 @@
 <?php
 
-use \AcceptanceTester;
 use Faker\Factory;
 
 class TaskCest
@@ -19,20 +18,46 @@ class TaskCest
 
     public function createTimerTask(AcceptanceTester $I)
     {
+        $clientName = $this->faker->name;
+        $clientEmail = $this->faker->safeEmail;
+        $project = $this->faker->text(20);
         $description = $this->faker->text(100);
 
         $I->wantTo('create a timed task');
+
+        // create client
+        $I->amOnPage('/clients/create');
+        $I->fillField(['name' => 'name'], $clientName);
+        $I->fillField(['name' => 'contacts[0][email]'], $clientEmail);
+        $I->click('Save');
+        $I->see($clientEmail);
+        $clientId = $I->grabFromDatabase('clients', 'id', ['name' => $clientName]);
+
         $I->amOnPage('/tasks/create');
         $I->seeCurrentUrlEquals('/tasks/create');
 
+        $I->selectDropdown($I, $clientName, '.client-select .dropdown-toggle');
+        $I->selectDropdownCreate($I, 'project', $project);
         $I->fillField('#description', $description);
 
         $I->click('Start');
-        $I->wait(rand(2, 5));
+        $I->wait(rand(3, 6));
         $I->click('Stop');
-        $I->click('Save');
 
-        $I->seeInDatabase('tasks', ['description' => $description]);
+        $I->seeInDatabase('tasks', [
+            'description' => $description,
+            'client_id' => $clientId,
+        ]);
+        $I->seeInDatabase('projects', ['name' => $project]);
+
+        $I->click('More Actions');
+        $I->wait(2);
+        $I->click('Invoice Task');
+        $I->wait(2);
+        $I->click('Mark Sent');
+        $I->see('Sent');
+        $I->wait(2);
+        $I->see('Successfully created invoice');
     }
 
     public function createManualTask(AcceptanceTester $I)

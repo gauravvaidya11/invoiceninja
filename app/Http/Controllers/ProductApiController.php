@@ -1,103 +1,195 @@
-<?php namespace App\Http\Controllers;
+<?php
 
-use App\Ninja\Repositories\ProductRepository;
-use App\Ninja\Transformers\ProductTransformer;
-use Auth;
-use Str;
-use DB;
-use Datatable;
-use Utils;
-use URL;
-use View;
-use Input;
-use Session;
-use Redirect;
+namespace App\Http\Controllers;
 
+use App\Http\Requests\ProductRequest;
+use App\Http\Requests\CreateProductRequest;
+use App\Http\Requests\UpdateProductRequest;
 use App\Models\Product;
-use App\Models\TaxRate;
-use App\Services\ProductService;
+use App\Ninja\Repositories\ProductRepository;
 
+/**
+ * Class ProductApiController.
+ */
 class ProductApiController extends BaseAPIController
 {
-    protected $productService;
+    /**
+     * @var string
+     */
+    protected $entityType = ENTITY_PRODUCT;
 
-    protected  $productRepo;
+    /**
+     * @var ProductRepository
+     */
+    protected $productRepo;
 
-    public function __construct(ProductService $productService, ProductRepository $productRepo)
+    /**
+     * ProductApiController constructor.
+     *
+     * @param ProductRepository $productRepo
+     */
+    public function __construct(ProductRepository $productRepo)
     {
         parent::__construct();
 
-        $this->productService = $productService;
         $this->productRepo = $productRepo;
     }
 
+    /**
+     * @SWG\Get(
+     *   path="/products",
+     *   summary="List products",
+     *   operationId="listProducts",
+     *   tags={"product"},
+     *   @SWG\Response(
+     *     response=200,
+     *     description="A list of products",
+     *      @SWG\Schema(type="array", @SWG\Items(ref="#/definitions/Product"))
+     *   ),
+     *   @SWG\Response(
+     *     response="default",
+     *     description="an ""unexpected"" error"
+     *   )
+     * )
+     */
     public function index()
     {
+        $products = Product::scope()
+                        ->withTrashed()
+                        ->orderBy('updated_at', 'desc');
 
-        $products = Product::scope()->withTrashed();
-        $products = $products->paginate();
-
-        $paginator = Product::scope()->withTrashed()->paginate();
-
-        $transformer = new ProductTransformer(\Auth::user()->account, $this->serializer);
-        $data = $this->createCollection($products, $transformer, 'products', $paginator);
-
-        return $this->response($data);
-
+        return $this->listResponse($products);
     }
 
-    public function getDatatable()
+    /**
+     * @SWG\Get(
+     *   path="/products/{product_id}",
+     *   summary="Retrieve a product",
+     *   operationId="getProduct",
+     *   tags={"product"},
+     *   @SWG\Parameter(
+     *     in="path",
+     *     name="product_id",
+     *     type="integer",
+     *     required=true
+     *   ),
+     *   @SWG\Response(
+     *     response=200,
+     *     description="A single product",
+     *      @SWG\Schema(type="object", @SWG\Items(ref="#/definitions/Product"))
+     *   ),
+     *   @SWG\Response(
+     *     response="default",
+     *     description="an ""unexpected"" error"
+     *   )
+     * )
+     */
+    public function show(ProductRequest $request)
     {
-        return $this->productService->getDatatable(Auth::user()->account_id);
+        return $this->itemResponse($request->entity());
     }
 
-    public function store()
+    /**
+     * @SWG\Post(
+     *   path="/products",
+     *   summary="Create a product",
+     *   operationId="createProduct",
+     *   tags={"product"},
+     *   @SWG\Parameter(
+     *     in="body",
+     *     name="body",
+     *     @SWG\Schema(ref="#/definitions/Product")
+     *   ),
+     *   @SWG\Response(
+     *     response=200,
+     *     description="New product",
+     *      @SWG\Schema(type="object", @SWG\Items(ref="#/definitions/Product"))
+     *   ),
+     *   @SWG\Response(
+     *     response="default",
+     *     description="an ""unexpected"" error"
+     *   )
+     * )
+     */
+    public function store(CreateProductRequest $request)
     {
-        return $this->save();
+        $product = $this->productRepo->save($request->input());
+
+        return $this->itemResponse($product);
     }
 
-    public function update(\Illuminate\Http\Request $request, $publicId)
+    /**
+     * @SWG\Put(
+     *   path="/products/{product_id}",
+     *   summary="Update a product",
+     *   operationId="updateProduct",
+     *   tags={"product"},
+     *   @SWG\Parameter(
+     *     in="path",
+     *     name="product_id",
+     *     type="integer",
+     *     required=true
+     *   ),
+     *   @SWG\Parameter(
+     *     in="body",
+     *     name="product",
+     *     @SWG\Schema(ref="#/definitions/Product")
+     *   ),
+     *   @SWG\Response(
+     *     response=200,
+     *     description="Updated product",
+     *      @SWG\Schema(type="object", @SWG\Items(ref="#/definitions/Product"))
+     *   ),
+     *   @SWG\Response(
+     *     response="default",
+     *     description="an ""unexpected"" error"
+     *   )
+     * )
+     *
+     * @param mixed $publicId
+     */
+    public function update(UpdateProductRequest $request, $publicId)
     {
-
-        if ($request->action == ACTION_ARCHIVE) {
-            $product = Product::scope($publicId)->withTrashed()->firstOrFail();
-            $this->productRepo->archive($product);
-
-            $transformer = new ProductTransformer(\Auth::user()->account, Input::get('serializer'));
-            $data = $this->createItem($product, $transformer, 'products');
-
-            return $this->response($data);
+        if ($request->action) {
+            return $this->handleAction($request);
         }
-        else
-            return $this->save($publicId);
+
+        $data = $request->input();
+        $data['public_id'] = $publicId;
+        $product = $this->productRepo->save($data, $request->entity());
+
+        return $this->itemResponse($product);
     }
 
-    public function destroy($publicId)
-    {
-       //stub
-    }
+    /**
+     * @SWG\Delete(
+     *   path="/products/{product_id}",
+     *   summary="Delete a product",
+     *   operationId="deleteProduct",
+     *   tags={"product"},
+     *   @SWG\Parameter(
+     *     in="path",
+     *     name="product_id",
+     *     type="integer",
+     *     required=true
+     *   ),
+     *   @SWG\Response(
+     *     response=200,
+     *     description="Deleted product",
+     *      @SWG\Schema(type="object", @SWG\Items(ref="#/definitions/Product"))
+     *   ),
+     *   @SWG\Response(
+     *     response="default",
+     *     description="an ""unexpected"" error"
+     *   )
+     * )
+     */
+     public function destroy(UpdateProductRequest $request)
+     {
+         $product = $request->entity();
 
-    private function save($productPublicId = false)
-    {
-        if ($productPublicId) {
-            $product = Product::scope($productPublicId)->firstOrFail();
-        } else {
-            $product = Product::createNew();
-        }
+         $this->productRepo->delete($product);
 
-        $product->product_key = trim(Input::get('product_key'));
-        $product->notes = trim(Input::get('notes'));
-        $product->cost = trim(Input::get('cost'));
-        //$product->default_tax_rate_id = Input::get('default_tax_rate_id');
-
-        $product->save();
-
-        $transformer = new ProductTransformer(\Auth::user()->account, Input::get('serializer'));
-        $data = $this->createItem($product, $transformer, 'products');
-
-        return $this->response($data);
-
-    }
-
-
+         return $this->itemResponse($product);
+     }
 }

@@ -1,10 +1,21 @@
-<?php namespace App\Ninja\Import\Wave;
+<?php
+
+namespace App\Ninja\Import\Wave;
 
 use App\Ninja\Import\BaseTransformer;
 use League\Fractal\Resource\Item;
+
 // vendor
+/**
+ * Class VendorTransformer.
+ */
 class VendorTransformer extends BaseTransformer
 {
+    /**
+     * @param $data
+     *
+     * @return bool|Item
+     */
     public function transform($data)
     {
         if ($this->hasVendor($data->customer_name)) {

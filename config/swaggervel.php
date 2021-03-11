@@ -23,6 +23,13 @@ return array(
 
     /*
       |--------------------------------------------------------------------------
+      | Relative path to access swagger ui.
+      |--------------------------------------------------------------------------
+    */
+    'api-docs-route' => 'api-docs',
+
+    /*
+      |--------------------------------------------------------------------------
       | Absolute path to directory containing the swagger annotations are stored.
       |--------------------------------------------------------------------------
     */
@@ -38,7 +45,8 @@ return array(
         base_path()."/tests",
         base_path()."/resources/views",
         base_path()."/config",
-        base_path()."/vendor"
+        base_path()."/vendor",
+        base_path()."/app/Console/Commands/stubs"
     ),
 
     /*

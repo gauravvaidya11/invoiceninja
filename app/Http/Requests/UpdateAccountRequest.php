@@ -1,7 +1,6 @@
-<?php namespace app\Http\Requests;
+<?php
 
-use App\Http\Requests\Request;
-use Illuminate\Validation\Factory;
+namespace App\Http\Requests;
 
 class UpdateAccountRequest extends Request
 {
@@ -28,4 +27,4 @@ class UpdateAccountRequest extends Request
         ];
     }
 }
-// 
+//

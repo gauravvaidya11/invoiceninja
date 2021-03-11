@@ -1,46 +1,37 @@
-<?php namespace App\Http\Controllers;
+<?php
 
-use Illuminate\Database\Eloquent\ModelNotFoundException;
-use Utils;
-use Response;
-use Input;
-use Auth;
+namespace App\Http\Controllers;
+
+use App\Http\Requests\ClientRequest;
+use App\Http\Requests\CreateClientRequest;
+use App\Http\Requests\UpdateClientRequest;
 use App\Models\Client;
 use App\Ninja\Repositories\ClientRepository;
-use App\Http\Requests\CreateClientRequest;
-use App\Http\Controllers\BaseAPIController;
-use App\Ninja\Transformers\ClientTransformer;
-use App\Services\ClientService;
-use App\Http\Requests\UpdateClientRequest;
+use Input;
+use Response;
 
 class ClientApiController extends BaseAPIController
 {
     protected $clientRepo;
-    protected $clientService;
 
-    public function __construct(ClientRepository $clientRepo, ClientService $clientService)
+    protected $entityType = ENTITY_CLIENT;
+
+    public function __construct(ClientRepository $clientRepo)
     {
         parent::__construct();
 
         $this->clientRepo = $clientRepo;
-        $this->clientService = $clientService;
-    }
-
-    public function ping()
-    {
-        $headers = Utils::getApiHeaders();
-
-        return Response::make('', 200, $headers);
     }
 
     /**
      * @SWG\Get(
      *   path="/clients",
-     *   summary="List of clients",
+     *   summary="List clients",
+     *   operationId="listClients",
      *   tags={"client"},
      *   @SWG\Response(
      *     response=200,
-     *     description="A list with clients",
+     *     description="A list of clients",
      *      @SWG\Schema(type="array", @SWG\Items(ref="#/definitions/Client"))
      *   ),
      *   @SWG\Response(
@@ -52,37 +43,63 @@ class ClientApiController extends BaseAPIController
     public function index()
     {
         $clients = Client::scope()
-            ->with($this->getIncluded())
-            ->orderBy('created_at', 'desc')->withTrashed();
+            ->orderBy('updated_at', 'desc')
+            ->withTrashed();
 
-        // Filter by email
-        if (Input::has('email')) {
-
-            $email = Input::get('email');
+        if ($email = Input::get('email')) {
             $clients = $clients->whereHas('contacts', function ($query) use ($email) {
                 $query->where('email', $email);
             });
-
+        } elseif ($idNumber = Input::get('id_number')) {
+            $clients = $clients->whereIdNumber($idNumber);
         }
 
-        $clients = $clients->paginate();
+        return $this->listResponse($clients);
+    }
 
-        $transformer = new ClientTransformer(Auth::user()->account, Input::get('serializer'));
-        $paginator = Client::scope()->withTrashed()->paginate();
+    /**
+     * @SWG\Get(
+     *   path="/clients/{client_id}",
+     *   summary="Retrieve a client",
+     *   operationId="getClient",
+     *   tags={"client"},
+     *   @SWG\Parameter(
+     *     in="path",
+     *     name="client_id",
+     *     type="integer",
+     *     required=true
+     *   ),
+     *   @SWG\Response(
+     *     response=200,
+     *     description="A single client",
+     *      @SWG\Schema(type="object", @SWG\Items(ref="#/definitions/Client"))
+     *   ),
+     *   @SWG\Response(
+     *     response="default",
+     *     description="an ""unexpected"" error"
+     *   )
+     * )
+     */
+    public function show(ClientRequest $request)
+    {
+        $client = $request->entity();
 
-        $data = $this->createCollection($clients, $transformer, ENTITY_CLIENT, $paginator);
+        if (strpos(request()->include, 'activities') !== false) {
+            $client->load('activities.client.contacts', 'activities.user', 'activities.invoice', 'activities.payment', 'activities.credit', 'activities.account', 'activities.task', 'activities.expense', 'activities.contact');
+        }
 
-        return $this->response($data);
+        return $this->itemResponse($client);
     }
 
     /**
      * @SWG\Post(
      *   path="/clients",
-     *   tags={"client"},
      *   summary="Create a client",
+     *   operationId="createClient",
+     *   tags={"client"},
      *   @SWG\Parameter(
      *     in="body",
-     *     name="body",
+     *     name="client",
      *     @SWG\Schema(ref="#/definitions/Client")
      *   ),
      *   @SWG\Response(
@@ -100,29 +117,29 @@ class ClientApiController extends BaseAPIController
     {
         $client = $this->clientRepo->save($request->input());
 
-        $client = Client::scope($client->public_id)
-            ->with('country', 'contacts', 'industry', 'size', 'currency')
-            ->first();
-
-        $transformer = new ClientTransformer(Auth::user()->account, Input::get('serializer'));
-        $data = $this->createItem($client, $transformer, ENTITY_CLIENT);
-
-        return $this->response($data);
+        return $this->itemResponse($client);
     }
 
     /**
      * @SWG\Put(
      *   path="/clients/{client_id}",
-     *   tags={"client"},
      *   summary="Update a client",
+     *   operationId="updateClient",
+     *   tags={"client"},
+     *   @SWG\Parameter(
+     *     in="path",
+     *     name="client_id",
+     *     type="integer",
+     *     required=true
+     *   ),
      *   @SWG\Parameter(
      *     in="body",
-     *     name="body",
+     *     name="client",
      *     @SWG\Schema(ref="#/definitions/Client")
      *   ),
      *   @SWG\Response(
      *     response=200,
-     *     description="Update client",
+     *     description="Updated client",
      *      @SWG\Schema(type="object", @SWG\Items(ref="#/definitions/Client"))
      *   ),
      *   @SWG\Response(
@@ -130,71 +147,39 @@ class ClientApiController extends BaseAPIController
      *     description="an ""unexpected"" error"
      *   )
      * )
+     *
+     * @param mixed $publicId
      */
-
     public function update(UpdateClientRequest $request, $publicId)
     {
-        if ($request->action == ACTION_ARCHIVE) {
-
-            try {
-                $client = Client::scope($publicId)->withTrashed()->firstOrFail();
-            } catch (ModelNotFoundException $e) {
-                return $this->errorResponse(['message'=>'Record not found'], 400);
-            }
-
-            $this->clientRepo->archive($client);
-
-            $transformer = new ClientTransformer(Auth::user()->account, Input::get('serializer'));
-            $data = $this->createItem($client, $transformer, ENTITY_CLIENT);
-
-            return $this->response($data);
-        }
-        else if ($request->action == ACTION_RESTORE){
-
-            $client = Client::scope($publicId)->withTrashed()->first();
-
-            if(!$client)
-                return $this->errorResponse(['message'=>'Client not found.']);
-
-            $this->clientRepo->restore($client);
-
-            $transformer = new ClientTransformer(Auth::user()->account, Input::get('serializer'));
-            $data = $this->createItem($client, $transformer, ENTITY_CLIENT);
-
-            return $this->response($data);
+        if ($request->action) {
+            return $this->handleAction($request);
         }
 
         $data = $request->input();
         $data['public_id'] = $publicId;
-        $this->clientRepo->save($data);
+        $client = $this->clientRepo->save($data, $request->entity());
 
-        $client = Client::scope($publicId)
-            ->with('country', 'contacts', 'industry', 'size', 'currency')
-            ->first();
+        $client->load(['contacts']);
 
-        if(!$client)
-            return $this->errorResponse(['message'=>'Client not found.']);
-        
-        $transformer = new ClientTransformer(Auth::user()->account, Input::get('serializer'));
-        $data = $this->createItem($client, $transformer, ENTITY_CLIENT);
-
-        return $this->response($data);
+        return $this->itemResponse($client);
     }
-
 
     /**
      * @SWG\Delete(
      *   path="/clients/{client_id}",
-     *   tags={"client"},
      *   summary="Delete a client",
+     *   operationId="deleteClient",
+     *   tags={"client"},
      *   @SWG\Parameter(
-     *     in="body",
-     *     name="body",
-     *     @SWG\Schema(ref="#/definitions/Client")
+     *     in="path",
+     *     name="client_id",
+     *     type="integer",
+     *     required=true
      *   ),
      *   @SWG\Response(
      *     response=200,
-     *     description="Delete client",
+     *     description="Deleted client",
      *      @SWG\Schema(type="object", @SWG\Items(ref="#/definitions/Client"))
      *   ),
      *   @SWG\Response(
@@ -203,24 +188,12 @@ class ClientApiController extends BaseAPIController
      *   )
      * )
      */
-    
-    public function destroy($publicId)
+    public function destroy(UpdateClientRequest $request)
     {
+        $client = $request->entity();
 
-        $client = Client::scope($publicId)->withTrashed()->first();
         $this->clientRepo->delete($client);
 
-        $client = Client::scope($publicId)
-            ->with('country', 'contacts', 'industry', 'size', 'currency')
-            ->withTrashed()
-            ->first();
-
-        $transformer = new ClientTransformer(Auth::user()->account, Input::get('serializer'));
-        $data = $this->createItem($client, $transformer, ENTITY_CLIENT);
-
-        return $this->response($data);
-
+        return $this->itemResponse($client);
     }
-
-
 }

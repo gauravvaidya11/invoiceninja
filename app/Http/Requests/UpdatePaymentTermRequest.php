@@ -1,18 +1,20 @@
-<?php namespace app\Http\Requests;
+<?php
 
-use App\Http\Requests\Request;
-use Illuminate\Validation\Factory;
+namespace App\Http\Requests;
 
-class UpdateExpenseRequest extends Request
+use App\Models\Invoice;
+
+class UpdatePaymentTermRequest extends PaymentTermRequest
 {
     /**
      * Determine if the user is authorized to make this request.
      *
      * @return bool
      */
+
     public function authorize()
     {
-        return true;
+        return $this->entity() && $this->user()->can('edit', $this->entity());
     }
 
     /**
@@ -20,11 +22,21 @@ class UpdateExpenseRequest extends Request
      *
      * @return array
      */
+
     public function rules()
     {
-        return [
-            'amount' => 'required|positive',
+        if (! $this->entity()) {
+            return [];
+        }
+
+        $paymentTermId = $this->entity()->id;
+
+        $rules = [
+            'num_days' => 'required|numeric|unique:payment_terms,num_days,' . $paymentTermId . ',id,account_id,' . $this->user()->account_id . ',deleted_at,NULL'
+                . '|unique:payment_terms,num_days,' . $paymentTermId . ',id,account_id,0,deleted_at,NULL',
         ];
 
+
+        return $rules;
     }
 }

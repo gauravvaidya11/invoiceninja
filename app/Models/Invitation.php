@@ -1,95 +1,94 @@
-<?php namespace App\Models;
+<?php
 
-use Utils;
-use Carbon;
+namespace App\Models;
+
 use Illuminate\Database\Eloquent\SoftDeletes;
+use App\Models\LookupInvitation;
+use App\Models\Traits\Inviteable;
+use Utils;
 
+/**
+ * Class Invitation.
+ */
 class Invitation extends EntityModel
 {
     use SoftDeletes;
+    use Inviteable;
+
+    /**
+     * @var array
+     */
     protected $dates = ['deleted_at'];
 
+    /**
+     * @return mixed
+     */
+    public function getEntityType()
+    {
+        return ENTITY_INVITATION;
+    }
+
+    /**
+     * @return mixed
+     */
     public function invoice()
     {
         return $this->belongsTo('App\Models\Invoice')->withTrashed();
     }
 
+    /**
+     * @return mixed
+     */
     public function contact()
     {
         return $this->belongsTo('App\Models\Contact')->withTrashed();
     }
 
+    /**
+     * @return mixed
+     */
     public function user()
     {
         return $this->belongsTo('App\Models\User')->withTrashed();
     }
 
+    /**
+     * @return \Illuminate\Database\Eloquent\Relations\BelongsTo
+     */
     public function account()
     {
         return $this->belongsTo('App\Models\Account');
     }
 
-    public function getLink($type = 'view')
+    public function signatureDiv()
     {
-        if (!$this->account) {
-            $this->load('account');
+        if (! $this->signature_base64) {
+            return false;
         }
 
-        $url = SITE_URL;
-        $iframe_url = $this->account->iframe_url;
-        
-        if ($this->account->isPro()) {
-            if ($iframe_url) {
-                return "{$iframe_url}/?{$this->invitation_key}";
-            } elseif ($this->account->subdomain) {
-                $url = Utils::replaceSubdomain($url, $this->account->subdomain);
-            }
-        }
-        
-        return "{$url}/{$type}/{$this->invitation_key}";
-    }
-
-    public function getStatus()
-    {
-        $hasValue = false;
-        $parts = [];
-        $statuses = $this->message_id ? ['sent', 'opened', 'viewed'] : ['sent', 'viewed'];
-
-        foreach ($statuses as $status) {
-            $field = "{$status}_date";
-            $date = '';
-            if ($this->$field && $this->field != '0000-00-00 00:00:00') {
-                $date = Utils::dateToString($this->$field);
-                $hasValue = true;
-            }
-            $parts[] = trans('texts.invitation_status.' . $status) . ': ' . $date;
-        }
-
-        return $hasValue ? implode($parts, '<br/>') : false;
-    }
-
-    public function getName()
-    {
-        return $this->invitation_key;
-    }
-
-    public function markSent($messageId = null)
-    {
-        $this->message_id = $messageId;
-        $this->email_error = null;
-        $this->sent_date = Carbon::now()->toDateTimeString();
-        $this->save();
-    }
-
-    public function markViewed()
-    {
-        $invoice = $this->invoice;
-        $client = $invoice->client;
-
-        $this->viewed_date = Carbon::now()->toDateTimeString();
-        $this->save();
-
-        $invoice->markViewed();
-        $client->markLoggedIn();
+        return sprintf('<img src="data:image/svg+xml;base64,%s"></img><p/>%s: %s', $this->signature_base64, trans('texts.signed'), Utils::fromSqlDateTime($this->signature_date));
     }
 }
+
+Invitation::creating(function ($invitation)
+{
+    LookupInvitation::createNew($invitation->account->account_key, [
+        'invitation_key' => $invitation->invitation_key,
+    ]);
+});
+
+Invitation::updating(function ($invitation) {
+    $dirty = $invitation->getDirty();
+    if (array_key_exists('message_id', $dirty)) {
+        LookupInvitation::updateInvitation($invitation->account->account_key, $invitation);
+    }
+});
+
+Invitation::deleted(function ($invitation)
+{
+    if ($invitation->forceDeleting) {
+        LookupInvitation::deleteWhere([
+            'invitation_key' => $invitation->invitation_key,
+        ]);
+    }
+});

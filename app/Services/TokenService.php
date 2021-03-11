@@ -1,67 +1,55 @@
-<?php namespace App\Services;
+<?php
 
-use URL;
-use App\Services\BaseService;
+namespace App\Services;
+
+use App\Ninja\Datatables\TokenDatatable;
 use App\Ninja\Repositories\TokenRepository;
 
+/**
+ * Class TokenService.
+ */
 class TokenService extends BaseService
 {
+    /**
+     * @var TokenRepository
+     */
     protected $tokenRepo;
+
+    /**
+     * @var DatatableService
+     */
     protected $datatableService;
 
+    /**
+     * TokenService constructor.
+     *
+     * @param TokenRepository  $tokenRepo
+     * @param DatatableService $datatableService
+     */
     public function __construct(TokenRepository $tokenRepo, DatatableService $datatableService)
     {
         $this->tokenRepo = $tokenRepo;
         $this->datatableService = $datatableService;
     }
 
+    /**
+     * @return TokenRepository
+     */
     protected function getRepo()
     {
         return $this->tokenRepo;
     }
 
-    /*
-    public function save()
+    /**
+     * @param $userId
+     *
+     * @return \Illuminate\Http\JsonResponse
+     */
+    public function getDatatable($userId)
     {
-        return null;
+        $datatable = new TokenDatatable(false);
+        $query = $this->tokenRepo->find($userId);
+
+        return $this->datatableService->createDatatable($datatable, $query);
     }
-    */
-
-    public function getDatatable($accountId)
-    {
-        $query = $this->tokenRepo->find($accountId);
-
-        return $this->createDatatable(ENTITY_TOKEN, $query, false);
-    }
-
-    protected function getDatatableColumns($entityType, $hideClient)
-    {
-        return [
-            [
-                'name',
-                function ($model) {
-                    return link_to("tokens/{$model->public_id}/edit", $model->name);
-                }
-            ],
-            [
-                'token',
-                function ($model) {
-                    return $model->token;
-                }
-            ]
-        ];
-    }
-
-    protected function getDatatableActions($entityType)
-    {
-        return [
-            [
-                uctrans('texts.edit_token'),
-                function ($model) {
-                    return URL::to("tokens/{$model->public_id}/edit");
-                }
-            ]
-        ];
-    }
-
 }

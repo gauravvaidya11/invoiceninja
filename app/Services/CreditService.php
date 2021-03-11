@@ -1,85 +1,74 @@
-<?php namespace App\Services;
+<?php
 
-use Utils;
-use URL;
-use App\Services\BaseService;
+namespace App\Services;
+
+use App\Ninja\Datatables\CreditDatatable;
 use App\Ninja\Repositories\CreditRepository;
+use Auth;
+use Utils;
 
-
+/**
+ * Class CreditService.
+ */
 class CreditService extends BaseService
 {
+    /**
+     * @var CreditRepository
+     */
     protected $creditRepo;
+
+    /**
+     * @var DatatableService
+     */
     protected $datatableService;
 
+    /**
+     * CreditService constructor.
+     *
+     * @param CreditRepository $creditRepo
+     * @param DatatableService $datatableService
+     */
     public function __construct(CreditRepository $creditRepo, DatatableService $datatableService)
     {
         $this->creditRepo = $creditRepo;
         $this->datatableService = $datatableService;
     }
 
+    /**
+     * @return CreditRepository
+     */
     protected function getRepo()
     {
         return $this->creditRepo;
     }
 
-    public function save($data)
+    /**
+     * @param $data
+     * @param null|mixed $credit
+     *
+     * @return mixed|null
+     */
+    public function save($data, $credit = null)
     {
-        return $this->creditRepo->save($data);
+        return $this->creditRepo->save($data, $credit);
     }
 
+    /**
+     * @param $clientPublicId
+     * @param $search
+     *
+     * @return \Illuminate\Http\JsonResponse
+     */
     public function getDatatable($clientPublicId, $search)
     {
+        // we don't support bulk edit and hide the client on the individual client page
+        $datatable = new CreditDatatable(true, $clientPublicId);
         $query = $this->creditRepo->find($clientPublicId, $search);
 
-        return $this->createDatatable(ENTITY_CREDIT, $query, !$clientPublicId);
-    }
+        if (! Utils::hasPermission('view_credit')) {
+            $query->where('credits.user_id', '=', Auth::user()->id);
+        }
 
-    protected function getDatatableColumns($entityType, $hideClient)
-    {
-        return [
-            [
-                'client_name',
-                function ($model) {
-                    return $model->client_public_id ? link_to("clients/{$model->client_public_id}", Utils::getClientDisplayName($model)) : '';
-                },
-                ! $hideClient
-            ],
-            [
-                'amount',
-                function ($model) {
-                    return Utils::formatMoney($model->amount, $model->currency_id, $model->country_id) . '<span '.Utils::getEntityRowClass($model).'/>';
-                }
-            ],
-            [
-                'balance',
-                function ($model) {
-                    return Utils::formatMoney($model->balance, $model->currency_id, $model->country_id);
-                }
-            ],
-            [
-                'credit_date',
-                function ($model) {
-                    return Utils::fromSqlDate($model->credit_date);
-                }
-            ],
-            [
-                'private_notes',
-                function ($model) {
-                    return $model->private_notes;
-                }
-            ]
-        ];
-    }
-
-    protected function getDatatableActions($entityType)
-    {
-        return [
-            [
-                trans('texts.apply_credit'),
-                function ($model) {
-                    return URL::to("payments/create/{$model->client_public_id}") . '?paymentTypeId=1';
-                }
-            ]
-        ];
+        return $this->datatableService->createDatatable($datatable, $query);
     }
 }

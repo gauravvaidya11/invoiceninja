@@ -1,22 +1,30 @@
-<?php namespace App\Events;
+<?php
 
-use App\Events\Event;
+namespace App\Events;
 
 use Illuminate\Queue\SerializesModels;
 
-class QuoteWasEmailed extends Event {
-
-	use SerializesModels;
+/**
+ * Class QuoteWasEmailed.
+ */
+class QuoteWasEmailed extends Event
+{
+    use SerializesModels;
     public $quote;
-    
-	/**
-	 * Create a new event instance.
-	 *
-	 * @return void
-	 */
-    public function __construct($quote)
+
+    /**
+     * @var string
+     */
+    public $notes;
+
+    /**
+     * Create a new event instance.
+     *
+     * @param $quote
+     */
+    public function __construct($quote, $notes)
     {
         $this->quote = $quote;
+        $this->notes = $notes;
     }
-
 }

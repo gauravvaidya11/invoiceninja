@@ -1,18 +1,22 @@
-<?php namespace App\Http\Controllers;
+<?php
 
-use App\Services\UserService;
-use App\Ninja\Repositories\UserRepository;
-use App\Ninja\Transformers\UserTransformer;
-use Auth;
-use App\Models\User;
+namespace App\Http\Controllers;
 
+use App\Http\Requests\UserRequest;
 use App\Http\Requests\CreateUserRequest;
 use App\Http\Requests\UpdateUserRequest;
+use App\Models\User;
+use App\Ninja\Repositories\UserRepository;
+use App\Ninja\Transformers\UserTransformer;
+use App\Services\UserService;
+use Auth;
 
 class UserApiController extends BaseAPIController
 {
     protected $userService;
     protected $userRepo;
+
+    protected $entityType = ENTITY_USER;
 
     public function __construct(UserService $userService, UserRepository $userRepo)
     {
@@ -22,34 +26,119 @@ class UserApiController extends BaseAPIController
         $this->userRepo = $userRepo;
     }
 
+    /**
+     * @SWG\Get(
+     *   path="/users",
+     *   summary="List users",
+     *   operationId="listUsers",
+     *   tags={"user"},
+     *   @SWG\Response(
+     *     response=200,
+     *     description="A list of users",
+     *      @SWG\Schema(type="array", @SWG\Items(ref="#/definitions/User"))
+     *   ),
+     *   @SWG\Response(
+     *     response="default",
+     *     description="an ""unexpected"" error"
+     *   )
+     * )
+     */
     public function index()
     {
-        $user = Auth::user();
-        $users = User::whereAccountId($user->account_id)->withTrashed();
-        $users = $users->paginate();
+        $users = User::whereAccountId(Auth::user()->account_id)
+                        ->withTrashed()
+                        ->orderBy('created_at', 'desc');
 
-        $paginator = User::whereAccountId($user->account_id)->withTrashed()->paginate();
-
-        $transformer = new UserTransformer(Auth::user()->account, $this->serializer);
-        $data = $this->createCollection($users, $transformer, 'users', $paginator);
-
-        return $this->response($data);
+        return $this->listResponse($users);
     }
 
-    /*
+    /**
+     * @SWG\Get(
+     *   path="/users/{user_id}",
+     *   summary="Retrieve a user",
+     *   operationId="getUser",
+     *   tags={"client"},
+     *   @SWG\Parameter(
+     *     in="path",
+     *     name="user_id",
+     *     type="integer",
+     *     required=true
+     *   ),
+     *   @SWG\Response(
+     *     response=200,
+     *     description="A single user",
+     *      @SWG\Schema(type="object", @SWG\Items(ref="#/definitions/User"))
+     *   ),
+     *   @SWG\Response(
+     *     response="default",
+     *     description="an ""unexpected"" error"
+     *   )
+     * )
+     */
+    public function show(UserRequest $request)
+    {
+        return $this->itemResponse($request->entity());
+    }
+
+    /**
+     * @SWG\Post(
+     *   path="/users",
+     *   summary="Create a user",
+     *   operationId="createUser",
+     *   tags={"user"},
+     *   @SWG\Parameter(
+     *     in="body",
+     *     name="user",
+     *     @SWG\Schema(ref="#/definitions/User")
+     *   ),
+     *   @SWG\Response(
+     *     response=200,
+     *     description="New user",
+     *      @SWG\Schema(type="object", @SWG\Items(ref="#/definitions/User"))
+     *   ),
+     *   @SWG\Response(
+     *     response="default",
+     *     description="an ""unexpected"" error"
+     *   )
+     * )
+     */
     public function store(CreateUserRequest $request)
     {
         return $this->save($request);
     }
-    */
-    
+
+    /**
+     * @SWG\Put(
+     *   path="/users/{user_id}",
+     *   summary="Update a user",
+     *   operationId="updateUser",
+     *   tags={"user"},
+     *   @SWG\Parameter(
+     *     in="path",
+     *     name="user_id",
+     *     type="integer",
+     *     required=true
+     *   ),
+     *   @SWG\Parameter(
+     *     in="body",
+     *     name="user",
+     *     @SWG\Schema(ref="#/definitions/User")
+     *   ),
+     *   @SWG\Response(
+     *     response=200,
+     *     description="Updated user",
+     *      @SWG\Schema(type="object", @SWG\Items(ref="#/definitions/User"))
+     *   ),
+     *   @SWG\Response(
+     *     response="default",
+     *     description="an ""unexpected"" error"
+     *   )
+     * )
+     *
+     * @param mixed $userPublicId
+     */
     public function update(UpdateUserRequest $request, $userPublicId)
     {
-        /*
-        // temporary fix for ids starting at 0
-        $userPublicId -= 1;
-        $user = User::scope($userPublicId)->firstOrFail();
-        */
         $user = Auth::user();
 
         if ($request->action == ACTION_ARCHIVE) {
@@ -72,5 +161,37 @@ class UserApiController extends BaseAPIController
         $data = $this->createItem($user, $transformer, 'users');
 
         return $this->response($data);
+    }
+
+    /**
+     * @SWG\Delete(
+     *   path="/users/{user_id}",
+     *   summary="Delete a user",
+     *   operationId="deleteUser",
+     *   tags={"user"},
+     *   @SWG\Parameter(
+     *     in="path",
+     *     name="user_id",
+     *     type="integer",
+     *     required=true
+     *   ),
+     *   @SWG\Response(
+     *     response=200,
+     *     description="Deleted user",
+     *      @SWG\Schema(type="object", @SWG\Items(ref="#/definitions/User"))
+     *   ),
+     *   @SWG\Response(
+     *     response="default",
+     *     description="an ""unexpected"" error"
+     *   )
+     * )
+     */
+    public function destroy(UpdateUserRequest $request)
+    {
+        $entity = $request->entity();
+
+        $this->userRepo->delete($entity);
+
+        return $this->itemResponse($entity);
     }
 }

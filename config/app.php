@@ -4,6 +4,8 @@ use App\Libraries\Utils;
 
 return [
 
+    'name' => env('APP_NAME', 'Invoice Ninja'),
+
     /*
     |--------------------------------------------------------------------------
     | Application Debug Mode
@@ -16,6 +18,8 @@ return [
     */
 
     'debug' => env('APP_DEBUG', ''),
+
+    'env' => env('APP_ENV', 'production'),
 
     /*
     |--------------------------------------------------------------------------
@@ -80,9 +84,9 @@ return [
     |
     */
 
-    'key' => env('APP_KEY', ''),
+    'key' => env('APP_KEY', 'SomeRandomStringSomeRandomString'),
 
-    'cipher' => env('APP_CIPHER', MCRYPT_RIJNDAEL_128),
+    'cipher' => env('APP_CIPHER', 'AES-256-CBC'),
 
     /*
     |--------------------------------------------------------------------------
@@ -115,28 +119,29 @@ return [
         /*
          * Laravel Framework Service Providers...
          */
-        'Illuminate\Foundation\Providers\ArtisanServiceProvider',
         'Illuminate\Auth\AuthServiceProvider',
+        'Collective\Html\HtmlServiceProvider',
         'Illuminate\Bus\BusServiceProvider',
         'Illuminate\Cache\CacheServiceProvider',
         'Illuminate\Foundation\Providers\ConsoleSupportServiceProvider',
-        'Illuminate\Routing\ControllerServiceProvider',
         'Illuminate\Cookie\CookieServiceProvider',
         'Illuminate\Database\DatabaseServiceProvider',
         'Illuminate\Encryption\EncryptionServiceProvider',
         'Illuminate\Filesystem\FilesystemServiceProvider',
         'Illuminate\Foundation\Providers\FoundationServiceProvider',
         'Illuminate\Hashing\HashServiceProvider',
-        (isset($_ENV['POSTMARK_API_TOKEN']) ? 'Postmark\Adapters\LaravelMailProvider' : 'Illuminate\Mail\MailServiceProvider'),
+        'Illuminate\Mail\MailServiceProvider',
         'Illuminate\Pagination\PaginationServiceProvider',
         'Illuminate\Pipeline\PipelineServiceProvider',
         'Illuminate\Queue\QueueServiceProvider',
         'Illuminate\Redis\RedisServiceProvider',
         'Illuminate\Auth\Passwords\PasswordResetServiceProvider',
         'Illuminate\Session\SessionServiceProvider',
-        'Illuminate\Translation\TranslationServiceProvider',
         'Illuminate\Validation\ValidationServiceProvider',
         'Illuminate\View\ViewServiceProvider',
+        'Illuminate\Broadcasting\BroadcastServiceProvider',
+        'Illuminate\Notifications\NotificationServiceProvider',
+        'App\Ninja\Translation\TranslationServiceProvider',
 
         /*
          * Additional Providers
@@ -144,25 +149,37 @@ return [
         'Bootstrapper\BootstrapperL5ServiceProvider',
         'Former\FormerServiceProvider',
         'Barryvdh\Debugbar\ServiceProvider',
-        'Chumper\Datatable\DatatableServiceProvider',
         'Intervention\Image\ImageServiceProvider',
         'Webpatser\Countries\CountriesServiceProvider',
         'Barryvdh\LaravelIdeHelper\IdeHelperServiceProvider',
-        'Illuminate\Html\HtmlServiceProvider',
         'Laravel\Socialite\SocialiteServiceProvider',
         'Jlapp\Swaggervel\SwaggervelServiceProvider',
         'Maatwebsite\Excel\ExcelServiceProvider',
+        Websight\GcsProvider\CloudStorageServiceProvider::class,
+        'Jaybizzle\LaravelCrawlerDetect\LaravelCrawlerDetectServiceProvider',
+        Codedge\Updater\UpdaterServiceProvider::class,
+        Nwidart\Modules\LaravelModulesServiceProvider::class,
+        Barryvdh\Cors\ServiceProvider::class,
+        PragmaRX\Google2FALaravel\ServiceProvider::class,
+        'Chumper\Datatable\DatatableServiceProvider',
+        Laravel\Tinker\TinkerServiceProvider::class,
+
 
         /*
          * Application Service Providers...
          */
+        'App\Providers\AuthServiceProvider',
         'App\Providers\AppServiceProvider',
-        'App\Providers\BusServiceProvider',
+        'App\Providers\ComposerServiceProvider',
         'App\Providers\ConfigServiceProvider',
         'App\Providers\EventServiceProvider',
         'App\Providers\RouteServiceProvider',
 
         'Barryvdh\LaravelIdeHelper\IdeHelperServiceProvider',
+        'Davibennun\LaravelPushNotification\LaravelPushNotificationServiceProvider',
+        Laravel\Scout\ScoutServiceProvider::class,
+        ScoutEngines\Elasticsearch\ElasticsearchProvider::class,
+
     ],
 
     /*
@@ -192,6 +209,7 @@ return [
         'Eloquent'        => 'Illuminate\Database\Eloquent\Model',
         'Event'           => 'Illuminate\Support\Facades\Event',
         'File'            => 'Illuminate\Support\Facades\File',
+        'Gate'            => 'Illuminate\Support\Facades\Gate',
         'Hash'            => 'Illuminate\Support\Facades\Hash',
         'Input'           => 'Illuminate\Support\Facades\Input',
         'Lang'            => 'Illuminate\Support\Facades\Lang',
@@ -207,13 +225,13 @@ return [
         'Schema'          => 'Illuminate\Support\Facades\Schema',
         'Seeder'          => 'Illuminate\Database\Seeder',
         'Session'         => 'Illuminate\Support\Facades\Session',
+        'Storage'         => 'Illuminate\Support\Facades\Storage',
         'Str'             => 'Illuminate\Support\Str',
         'URL'             => 'Illuminate\Support\Facades\URL',
         'Validator'       => 'Illuminate\Support\Facades\Validator',
         'View'            => 'Illuminate\Support\Facades\View',
 
         // Added Class Aliases
-        'Utils'              => 'App\Libraries\Utils',
         'Form'              => 'Collective\Html\FormFacade',
         'HTML'              => 'Collective\Html\HtmlFacade',
         'SSH'              => 'Illuminate\Support\Facades\SSH',
@@ -239,7 +257,6 @@ return [
         'Typeahead'       => 'Bootstrapper\Facades\Typeahead',
         'Typography'      => 'Bootstrapper\Facades\Typography',
         'Former'          => 'Former\Facades\Former',
-        'Datatable'       => 'Chumper\Datatable\Facades\DatatableFacade',
         'Omnipay'         => 'Omnipay\Omnipay',
         'CreditCard'      => 'Omnipay\Common\CreditCard',
         'Image'           => 'Intervention\Image\Facades\Image',
@@ -248,6 +265,18 @@ return [
         'Rocketeer'       => 'Rocketeer\Facades\Rocketeer',
         'Socialite'       => 'Laravel\Socialite\Facades\Socialite',
         'Excel'           => 'Maatwebsite\Excel\Facades\Excel',
+        'PushNotification' => 'Davibennun\LaravelPushNotification\Facades\PushNotification',
+        'Crawler'   => 'Jaybizzle\LaravelCrawlerDetect\Facades\LaravelCrawlerDetect',
+        'Datatable' => 'Chumper\Datatable\Facades\DatatableFacade',
+        'Updater' => Codedge\Updater\UpdaterFacade::class,
+        'Module' => Nwidart\Modules\Facades\Module::class,
+
+        'Utils' => App\Libraries\Utils::class,
+        'DateUtils' => App\Libraries\DateUtils::class,
+        'HTMLUtils' => App\Libraries\HTMLUtils::class,
+        'CurlUtils' => App\Libraries\CurlUtils::class,
+        'Domain' => App\Constants\Domain::class,
+        'Google2FA' => PragmaRX\Google2FALaravel\Facade::class,
 
     ],
 

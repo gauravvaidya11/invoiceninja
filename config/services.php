@@ -15,15 +15,21 @@ return [
 	*/
 
     'postmark' => env('POSTMARK_API_TOKEN', ''),
+	'postmark_ticket' => env('POSTMARK_API_TICKET_TOKEN'),
+	'postmark_ticket_2' => env('POSTMARK_API_TICKET_TOKEN_2'),
 
 	'mailgun' => [
-		'domain' => '',
-		'secret' => '',
+		'domain' => env('MAILGUN_DOMAIN',''),
+		'secret' => env('MAILGUN_SECRET',''),
 	],
 
 	'mandrill' => [
 		'secret' => '',
 	],
+	
+	'sparkpost' => [
+                'secret' => env('SPARKPOST_API_KEY'),
+        ],
 
 	'ses' => [
 		'key' => '',

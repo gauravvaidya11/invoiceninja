@@ -1,39 +1,43 @@
-<?php namespace App\Http\Controllers;
+<?php
 
-use App\Ninja\Mailers\ContactMailer;
-use Auth;
-use Illuminate\Http\Request;
-use Input;
-use Utils;
-use Response;
-use App\Models\Payment;
+namespace App\Http\Controllers;
+
+use App\Http\Requests\PaymentRequest;
+use App\Http\Requests\CreatePaymentAPIRequest;
+use App\Http\Requests\UpdatePaymentRequest;
 use App\Models\Invoice;
+use App\Models\Payment;
+use App\Ninja\Mailers\ContactMailer;
 use App\Ninja\Repositories\PaymentRepository;
-use App\Http\Controllers\BaseAPIController;
-use App\Ninja\Transformers\PaymentTransformer;
-use App\Ninja\Transformers\InvoiceTransformer;
+use App\Services\PaymentService;
+use Input;
+use Response;
 
 class PaymentApiController extends BaseAPIController
 {
     protected $paymentRepo;
+    protected $paymentService;
 
-    public function __construct(PaymentRepository $paymentRepo, ContactMailer $contactMailer)
+    protected $entityType = ENTITY_PAYMENT;
+
+    public function __construct(PaymentRepository $paymentRepo, PaymentService $paymentService, ContactMailer $contactMailer)
     {
         parent::__construct();
 
         $this->paymentRepo = $paymentRepo;
+        $this->paymentService = $paymentService;
         $this->contactMailer = $contactMailer;
-
     }
 
     /**
      * @SWG\Get(
      *   path="/payments",
+     *   summary="List payments",
+     *   operationId="listPayments",
      *   tags={"payment"},
-     *   summary="List of payments",
      *   @SWG\Response(
      *     response=200,
-     *     description="A list with payments",
+     *     description="A list of payments",
      *      @SWG\Schema(type="array", @SWG\Items(ref="#/definitions/Payment"))
      *   ),
      *   @SWG\Response(
@@ -44,92 +48,51 @@ class PaymentApiController extends BaseAPIController
      */
     public function index()
     {
-        $paginator = Payment::scope();
         $payments = Payment::scope()
-                        ->with('client.contacts', 'invitation', 'user', 'invoice')->withTrashed();
+                        ->withTrashed()
+                        ->with(['invoice'])
+                        ->orderBy('updated_at', 'desc');
 
-        if ($clientPublicId = Input::get('client_id')) {
-            $filter = function($query) use ($clientPublicId) {
-                $query->where('public_id', '=', $clientPublicId);
-            };
-            $payments->whereHas('client', $filter);
-            $paginator->whereHas('client', $filter);
-        }
-
-        $payments = $payments->orderBy('created_at', 'desc')->paginate();
-        $paginator = $paginator->paginate();
-        $transformer = new PaymentTransformer(Auth::user()->account, Input::get('serializer'));
-        
-        $data = $this->createCollection($payments, $transformer, 'payments', $paginator);
-
-        return $this->response($data);
+        return $this->listResponse($payments);
     }
 
-
-            /**
-             * @SWG\Put(
-             *   path="/payments/{payment_id",
-             *   summary="Update a payment",
-             *   tags={"payment"},
-             *   @SWG\Parameter(
-             *     in="body",
-             *     name="body",
-             *     @SWG\Schema(ref="#/definitions/Payment")
-             *   ),
-             *   @SWG\Response(
-             *     response=200,
-             *     description="Update payment",
-             *      @SWG\Schema(type="object", @SWG\Items(ref="#/definitions/Payment"))
-             *   ),
-             *   @SWG\Response(
-             *     response="default",
-             *     description="an ""unexpected"" error"
-             *   )
-             * )
-             */
-
-        public function update(Request $request, $publicId)
-        {
-            $data = Input::all();
-            $data['public_id'] = $publicId;
-            $error = false;
-
-            if ($request->action == ACTION_ARCHIVE) {
-                $payment = Payment::scope($publicId)->withTrashed()->firstOrFail();
-                $this->paymentRepo->archive($payment);
-
-                $invoice = Invoice::scope($data['invoice_id'])->with('client')->with(['payments' => function($query) {
-                    $query->withTrashed();
-                }])->first();
-                $transformer = new InvoiceTransformer(\Auth::user()->account, Input::get('serializer'));
-                $data = $this->createItem($invoice, $transformer, 'invoice');
-
-                return $this->response($data);
-            }
-
-            $payment = $this->paymentRepo->save($data);
-
-            if ($error) {
-                return $error;
-            }
-
-            $invoice = Invoice::scope($data['invoice_id'])->with('client', 'invoice_items', 'invitations')->with(['payments' => function($query) {
-                $query->withTrashed();
-            }])->withTrashed()->first();
-            $transformer = new InvoiceTransformer(\Auth::user()->account, Input::get('serializer'));
-            $data = $this->createItem($invoice, $transformer, 'invoice');
-            return $this->response($data);
-        }
-
+    /**
+     * @SWG\Get(
+     *   path="/payments/{payment_id}",
+     *   summary="Retrieve a payment",
+     *   operationId="getPayment",
+     *   tags={"payment"},
+     *   @SWG\Parameter(
+     *     in="path",
+     *     name="payment_id",
+     *     type="integer",
+     *     required=true
+     *   ),
+     *   @SWG\Response(
+     *     response=200,
+     *     description="A single payment",
+     *      @SWG\Schema(type="object", @SWG\Items(ref="#/definitions/Payment"))
+     *   ),
+     *   @SWG\Response(
+     *     response="default",
+     *     description="an ""unexpected"" error"
+     *   )
+     * )
+     */
+    public function show(PaymentRequest $request)
+    {
+        return $this->itemResponse($request->entity());
+    }
 
     /**
      * @SWG\Post(
      *   path="/payments",
      *   summary="Create a payment",
+     *   operationId="createPayment",
      *   tags={"payment"},
      *   @SWG\Parameter(
      *     in="body",
-     *     name="body",
+     *     name="payment",
      *     @SWG\Schema(ref="#/definitions/Payment")
      *   ),
      *   @SWG\Response(
@@ -143,84 +106,96 @@ class PaymentApiController extends BaseAPIController
      *   )
      * )
      */
-    public function store()
+    public function store(CreatePaymentAPIRequest $request)
     {
-        $data = Input::all();
-        $error = false;
+        // check payment has been marked sent
+        $request->invoice->markSentIfUnsent();
 
-        if (isset($data['invoice_id'])) {
-            $invoice = Invoice::scope($data['invoice_id'])->with('client')->first();
-
-            if ($invoice) {
-                $data['invoice_id'] = $invoice->id;
-                $data['client_id'] = $invoice->client->id;
-            } else {
-                $error = trans('validation.not_in', ['attribute' => 'invoice_id']);
-            }
-        } else {
-            $error = trans('validation.not_in', ['attribute' => 'invoice_id']);
-        }
-
-        if (!isset($data['transaction_reference'])) {
-            $data['transaction_reference'] = '';
-        }
-
-        if ($error) {
-            return $error;
-        }
-
-        $payment = $this->paymentRepo->save($data);
+        $payment = $this->paymentService->save($request->input(), null, $request->invoice);
 
         if (Input::get('email_receipt')) {
             $this->contactMailer->sendPaymentConfirmation($payment);
         }
 
-        $invoice = Invoice::scope($invoice->public_id)->with('client', 'invoice_items', 'invitations')->with(['payments' => function($query) {
-            $query->withTrashed();
-        }])->first();
-        $transformer = new InvoiceTransformer(\Auth::user()->account, Input::get('serializer'));
-        $data = $this->createItem($invoice, $transformer, 'invoice');
-
-        return $this->response($data);
+        return $this->itemResponse($payment);
     }
 
-        /**
-         * @SWG\Delete(
-         *   path="/payments/{payment_id}",
-         *   summary="Delete a payment",
-         *   tags={"payment"},
-         *   @SWG\Parameter(
-         *     in="body",
-         *     name="body",
-         *     @SWG\Schema(ref="#/definitions/Payment")
-         *   ),
-         *   @SWG\Response(
-         *     response=200,
-         *     description="Delete payment",
-         *      @SWG\Schema(type="object", @SWG\Items(ref="#/definitions/Payment"))
-         *   ),
-         *   @SWG\Response(
-         *     response="default",
-         *     description="an ""unexpected"" error"
-         *   )
-         * )
-         */
-
-        public function destroy($publicId)
-        {
-
-            $payment = Payment::scope($publicId)->withTrashed()->first();
-            $invoiceId = $payment->invoice->public_id;
-
-            $this->paymentRepo->delete($payment);
-
-            $invoice = Invoice::scope($invoiceId)->with('client', 'invoice_items', 'invitations')->with(['payments' => function($query) {
-                $query->withTrashed();
-            }])->first();
-
-            $transformer = new InvoiceTransformer(\Auth::user()->account, Input::get('serializer'));
-            $data = $this->createItem($invoice, $transformer, 'invoice');
-
-            return $this->response($data);
+    /**
+     * @SWG\Put(
+     *   path="/payments/{payment_id}",
+     *   summary="Update a payment",
+     *   operationId="updatePayment",
+     *   tags={"payment"},
+     *   @SWG\Parameter(
+     *     in="path",
+     *     name="payment_id",
+     *     type="integer",
+     *     required=true
+     *   ),
+     *   @SWG\Parameter(
+     *     in="body",
+     *     name="payment",
+     *     @SWG\Schema(ref="#/definitions/Payment")
+     *   ),
+     *   @SWG\Response(
+     *     response=200,
+     *     description="Updated payment",
+     *      @SWG\Schema(type="object", @SWG\Items(ref="#/definitions/Payment"))
+     *   ),
+     *   @SWG\Response(
+     *     response="default",
+     *     description="an ""unexpected"" error"
+     *   )
+     * )
+     *
+     * @param mixed $publicId
+     */
+    public function update(UpdatePaymentRequest $request, $publicId)
+    {
+        if ($request->action) {
+            return $this->handleAction($request);
         }
+
+        $data = $request->input();
+        $data['public_id'] = $publicId;
+        $payment = $this->paymentRepo->save($data, $request->entity());
+
+        if (Input::get('email_receipt')) {
+            $this->contactMailer->sendPaymentConfirmation($payment);
+        }
+
+        return $this->itemResponse($payment);
+    }
+
+    /**
+     * @SWG\Delete(
+     *   path="/payments/{payment_id}",
+     *   summary="Delete a payment",
+     *   operationId="deletePayment",
+     *   tags={"payment"},
+     *   @SWG\Parameter(
+     *     in="path",
+     *     name="payment_id",
+     *     type="integer",
+     *     required=true
+     *   ),
+     *   @SWG\Response(
+     *     response=200,
+     *     description="Deleted payment",
+     *      @SWG\Schema(type="object", @SWG\Items(ref="#/definitions/Payment"))
+     *   ),
+     *   @SWG\Response(
+     *     response="default",
+     *     description="an ""unexpected"" error"
+     *   )
+     * )
+     */
+    public function destroy(UpdatePaymentRequest $request)
+    {
+        $payment = $request->entity();
+
+        $this->paymentRepo->delete($payment);
+
+        return $this->itemResponse($payment);
+    }
 }

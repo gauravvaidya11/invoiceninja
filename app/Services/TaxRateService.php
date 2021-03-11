@@ -1,68 +1,55 @@
-<?php namespace App\Services;
+<?php
 
-use URL;
-use Auth;
-use App\Services\BaseService;
+namespace App\Services;
+
+use App\Ninja\Datatables\TaxRateDatatable;
 use App\Ninja\Repositories\TaxRateRepository;
 
+/**
+ * Class TaxRateService.
+ */
 class TaxRateService extends BaseService
 {
+    /**
+     * @var TaxRateRepository
+     */
     protected $taxRateRepo;
+
+    /**
+     * @var DatatableService
+     */
     protected $datatableService;
 
+    /**
+     * TaxRateService constructor.
+     *
+     * @param TaxRateRepository $taxRateRepo
+     * @param DatatableService  $datatableService
+     */
     public function __construct(TaxRateRepository $taxRateRepo, DatatableService $datatableService)
     {
         $this->taxRateRepo = $taxRateRepo;
         $this->datatableService = $datatableService;
     }
 
+    /**
+     * @return TaxRateRepository
+     */
     protected function getRepo()
     {
         return $this->taxRateRepo;
     }
 
-    /*
-    public function save()
-    {
-        return null;
-    }
-    */
-
+    /**
+     * @param $accountId
+     *
+     * @return \Illuminate\Http\JsonResponse
+     */
     public function getDatatable($accountId)
     {
+        $datatable = new TaxRateDatatable(false);
         $query = $this->taxRateRepo->find($accountId);
 
-        return $this->createDatatable(ENTITY_TAX_RATE, $query, false);
+        return $this->datatableService->createDatatable($datatable, $query);
     }
-
-    protected function getDatatableColumns($entityType, $hideClient)
-    {
-        return [
-            [
-                'name',
-                function ($model) {
-                    return link_to("tax_rates/{$model->public_id}/edit", $model->name);
-                }
-            ],
-            [
-                'rate',
-                function ($model) {
-                    return $model->rate . '%';
-                }
-            ]
-        ];
-    }
-
-    protected function getDatatableActions($entityType)
-    {
-        return [
-            [
-                uctrans('texts.edit_tax_rate'),
-                function ($model) {
-                    return URL::to("tax_rates/{$model->public_id}/edit");
-                }
-            ]
-        ];
-    }
-
 }

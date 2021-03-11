@@ -1,84 +1,59 @@
-<?php namespace App\Services;
+<?php
 
-use Utils;
-use Str;
-use DB;
-use Auth;
-use URL;
-use App\Services\BaseService;
+namespace App\Services;
+
+use App\Ninja\Datatables\ProductDatatable;
 use App\Ninja\Repositories\ProductRepository;
+use Auth;
+use Utils;
 
 class ProductService extends BaseService
 {
+    /**
+     * @var DatatableService
+     */
     protected $datatableService;
+
+    /**
+     * @var ProductRepository
+     */
     protected $productRepo;
 
+    /**
+     * ProductService constructor.
+     *
+     * @param DatatableService  $datatableService
+     * @param ProductRepository $productRepo
+     */
     public function __construct(DatatableService $datatableService, ProductRepository $productRepo)
     {
         $this->datatableService = $datatableService;
         $this->productRepo = $productRepo;
     }
 
+    /**
+     * @return ProductRepository
+     */
     protected function getRepo()
     {
         return $this->productRepo;
     }
 
-    /*
-    public function save()
+    /**
+     * @param $accountId
+     * @param mixed $search
+     *
+     * @return \Illuminate\Http\JsonResponse
+     */
+    public function getDatatable($accountId, $search)
     {
-        return null;
+        $datatable = new ProductDatatable(true);
+        $query = $this->productRepo->find($accountId, $search);
+
+        if (! Utils::hasPermission('view_product')) {
+            $query->where('products.user_id', '=', Auth::user()->id);
+        }
+
+        return $this->datatableService->createDatatable($datatable, $query);
     }
-    */
-
-    public function getDatatable($accountId)
-    {
-        $query = $this->productRepo->find($accountId);
-
-        return $this->createDatatable(ENTITY_PRODUCT, $query, false);
-    }
-
-    protected function getDatatableColumns($entityType, $hideClient)
-    {
-        return [
-            [
-                'product_key',
-                function ($model) {
-                    return link_to('products/'.$model->public_id.'/edit', $model->product_key);
-                }
-            ],
-            [
-                'notes',
-                function ($model) {
-                    return nl2br(Str::limit($model->notes, 100));
-                }
-            ],
-            [
-                'cost',
-                function ($model) {
-                    return Utils::formatMoney($model->cost);
-                }
-            ],
-            [
-                'tax_rate',
-                function ($model) {
-                    return $model->tax_rate ? ($model->tax_name . ' ' . $model->tax_rate . '%') : '';
-                },
-                Auth::user()->account->invoice_item_taxes
-            ]
-        ];
-    }
-
-    protected function getDatatableActions($entityType)
-    {
-        return [
-            [
-                uctrans('texts.edit_product'),
-                function ($model) {
-                    return URL::to("products/{$model->public_id}/edit");
-                }
-            ]
-        ];
-    }
-
 }

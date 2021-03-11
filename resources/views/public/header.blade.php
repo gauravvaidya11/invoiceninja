@@ -2,28 +2,13 @@
 
 @section('head')
     @if (!empty($clientFontUrl))
-    <link href="{!! $clientFontUrl !!}" rel="stylesheet" type="text/css">
-    @else
-    <link href="//fonts.googleapis.com/css?family=Roboto:400,700,900,100" rel="stylesheet" type="text/css">
+        <link href="{{ $clientFontUrl }}" rel="stylesheet" type="text/css">
     @endif
     <link href="{{ asset('css/built.public.css') }}?no_cache={{ NINJA_VERSION }}" rel="stylesheet" type="text/css"/>
-    @if (!empty($clientViewCSS))
-        <style type="text/css">{!! $clientViewCSS !!}</style>
-    @endif
+    <style type="text/css">{!! !empty($account)?$account->clientViewCSS():'' !!}</style>
 @stop
 
 @section('body')
-
-<!--
-<div id="fb-root"></div>
-<script>(function(d, s, id) {
-  var js, fjs = d.getElementsByTagName(s)[0];
-  if (d.getElementById(id)) return;
-  js = d.createElement(s); js.id = id;
-  js.src = "//connect.facebook.net/en_US/all.js#xfbml=1&appId=635126583203143";
-  fjs.parentNode.insertBefore(js, fjs);
-}(document, 'script', 'facebook-jssdk'));</script>
--->
 
 {!! Form::open(array('url' => 'get_started', 'id' => 'startForm')) !!}
 {!! Form::hidden('guest_key') !!}
@@ -55,44 +40,106 @@
   function getStarted() {
     $('#startForm').submit();
     return false;
-}
+  }
+
+  $(function() {
+      function positionFooter() {
+          // check that the footer appears at the bottom of the screen
+          var height = $(window).height() - ($('#header').height() + $('#footer').height());
+          if ($('#mainContent').height() < height) {
+              $('#mainContent').css('min-height', height);
+          }
+      }
+
+      if (inIframe()) {
+          $('#footer').hide();
+      } else {
+          positionFooter();
+          $(window).resize(positionFooter);
+      }
+  })
+
 </script>
 
 
-<nav class="navbar navbar-top navbar-inverse">
-    <div class="container">
-        <div class="navbar-header">
-            <button type="button" class="navbar-toggle collapsed" data-toggle="collapse" data-target="#navbar" aria-expanded="false" aria-controls="navbar">
-                <span class="sr-only">Toggle navigation</span>
-                <span class="icon-bar"></span>
-                <span class="icon-bar"></span>
-                <span class="icon-bar"></span>
-            </button>
-            @if (!isset($hideLogo) || !$hideLogo)
-                {{-- Per our license, please do not remove or modify this link. --}}
-                <a class="navbar-brand" href="{{ URL::to(NINJA_WEB_URL) }}" target="_blank"><img src="{{ asset('images/invoiceninja-logo.png') }}"></a>
-            @endif            
+<div id="header">
+    <nav class="navbar navbar-top navbar-inverse">
+        <div class="container">
+            <div class="navbar-header">
+                <button type="button" class="navbar-toggle collapsed" data-toggle="collapse" data-target="#navbar" aria-expanded="false" aria-controls="navbar">
+                    <span class="sr-only">Toggle navigation</span>
+                    <span class="icon-bar"></span>
+                    <span class="icon-bar"></span>
+                    <span class="icon-bar"></span>
+                </button>
+                @if (empty($account) || !$account->hasFeature(FEATURE_WHITE_LABEL))
+                    {{-- Per our license, please do not remove or modify this link. --}}
+                    <a class="navbar-brand" href="{{ URL::to(NINJA_WEB_URL) }}" target="_blank"><img
+                                src="{{ asset('images/invoiceninja-logo.png') }}" style="height:27px"></a>
+                @endif
+            </div>
+            <div id="navbar" class="collapse navbar-collapse">
+                <ul class="nav navbar-nav navbar-right">
+                @if (! empty($account) && $account->enable_client_portal)
+                    @if (isset($account) && $account->enable_client_portal_dashboard)
+                        <li {!! Request::is('*client/dashboard*') ? 'class="active"' : '' !!}>
+                            {!! link_to('/client/dashboard', trans('texts.dashboard') ) !!}
+                        </li>
+                    @endif
+                    @if (request()->contact && request()->contact->client->show_tasks_in_portal)
+                        <li {!! Request::is('*client/tasks') ? 'class="active"' : '' !!}>
+                            {!! link_to('/client/tasks', trans('texts.tasks') ) !!}
+                        </li>
+                    @endif
+                    @if (isset($hasQuotes) && $hasQuotes)
+                        <li {!! Request::is('*client/quotes') ? 'class="active"' : '' !!}>
+                            {!! link_to('/client/quotes', trans('texts.quotes') ) !!}
+                        </li>
+                    @endif
+                    <li {!! Request::is('*client/invoices') ? 'class="active"' : '' !!}>
+                        {!! link_to('/client/invoices', trans('texts.invoices') ) !!}
+                    </li>
+                    @if (!empty($account)
+                        && $account->hasFeature(FEATURE_DOCUMENTS)
+                        && (isset($hasDocuments) && $hasDocuments))
+                        <li {!! Request::is('*client/documents') ? 'class="active"' : '' !!}>
+                            {!! link_to('/client/documents', trans('texts.documents') ) !!}
+                        </li>
+                    @endif
+                    <li {!! Request::is('*client/payments') ? 'class="active"' : '' !!}>
+                        {!! link_to('/client/payments', trans('texts.payments') ) !!}
+                    </li>
+                    @if (isset($hasCredits) && $hasCredits)
+                        <li {!! Request::is('*client/credits') ? 'class="active"' : '' !!}>
+                            {!! link_to('/client/credits', trans('texts.credits') ) !!}
+                        </li>
+                    @endif
+                    @if (isset($hasPaymentMethods) && $hasPaymentMethods)
+                        <li {!! Request::is('*client/payment_methods') ? 'class="active"' : '' !!}>
+                            {!! link_to('/client/payment_methods', trans('texts.payment_methods') ) !!}
+                        </li>
+                    @endif
+                    @if(isset($account) && $account->enable_client_portal_dashboard)
+                        <li {!! Request::is('*client/tickets*') ? 'class="active"' : '' !!}>
+                            {!! link_to('client/tickets', trans('texts.tickets') ) !!}
+                        </li>
+                    @endif
+                    @if ($account->enable_portal_password && request()->contact->password)
+                        <li>
+                            {!! link_to('/client/logout?account_key=' . $account->account_key, trans('texts.logout')) !!}
+                        </li>
+                    @endif
+                @elseif (! empty($account))
+                    @if (isset($hasPaymentMethods) && $hasPaymentMethods)
+                        <li {!! Request::is('*client/payment_methods') ? 'class="active"' : '' !!}>
+                            {!! link_to('/client/payment_methods', trans('texts.payment_methods') ) !!}
+                        </li>
+                    @endif
+                @endif
+                </ul>
+            </div><!--/.nav-collapse -->
         </div>
-        <div id="navbar" class="collapse navbar-collapse">
-            @if (!isset($hideHeader) || !$hideHeader)
-            <ul class="nav navbar-nav navbar-right">
-                <li {{ Request::is('*client/dashboard') ? 'class="active"' : '' }}>
-                    {!! link_to('/client/dashboard', trans('texts.dashboard') ) !!}
-                </li>
-                <li {{ Request::is('*client/quotes') ? 'class="active"' : '' }}>
-                    {!! link_to('/client/quotes', trans('texts.quotes') ) !!}
-                </li>
-                <li {{ Request::is('*client/invoices') ? 'class="active"' : '' }}>
-                    {!! link_to('/client/invoices', trans('texts.invoices') ) !!}
-                </li>
-                <li {{ Request::is('*client/payments') ? 'class="active"' : '' }}>
-                    {!! link_to('/client/payments', trans('texts.payments') ) !!}
-                </li>                
-            </ul>
-            @endif
-        </div><!--/.nav-collapse -->
-    </div>
-</nav>
+    </nav>
 
     <div class="container">
 
@@ -110,13 +157,20 @@
       <div class="alert alert-danger">{!! Session::get('error') !!}</div>
       @endif
   </div>
+</div>
 
-@yield('content')
+<div id="mainContent" class="container">
+    @yield('content')
+</div>
+
+@if(Utils::isSelfHost() && !empty($account) && !empty($account->clientViewJS()))
+  {!! $account->clientViewJS() !!}
+@endif
 
 <footer id="footer" role="contentinfo">
     <div class="top">
         <div class="wrap">
-            @if (!isset($hideLogo) || !$hideLogo)
+            @if (empty($account) || !$account->hasFeature(FEATURE_WHITE_LABEL))
             <div id="footer-menu" class="menu-wrap">
                 <ul id="menu-footer-menu" class="menu">
                     <li id="menu-item-31" class="menu-item-31">
@@ -127,20 +181,20 @@
                     </li>
                     <li id="menu-item-33" class="menu-item-33">
                         {!! link_to('#', 'GitHub', ['target' => '_blank', 'onclick' => 'openUrl("https://github.com/hillelcoren/invoice-ninja", "/footer/social/github")']) !!}
-                    </li>                    
+                    </li>
                     <li id="menu-item-30" class="menu-item-30">
                         {!! link_to(NINJA_WEB_URL . '/contact', trans('texts.contact')) !!}
                     </li>
                 </ul>
-            </div>      
-            @endif   
+            </div>
+            @endif
         </div><!-- .wrap -->
     </div><!-- .top -->
-    
+
     <div class="bottom">
         <div class="wrap">
-            @if (!isset($hideLogo) || !$hideLogo)
-                <div class="copy">Copyright &copy;2015 <a href="{{ NINJA_WEB_URL }}" target="_blank">Invoice Ninja</a>. All rights reserved.</div>
+            @if (empty($account) || !$account->hasFeature(FEATURE_WHITE_LABEL))
+                <div class="copy">Copyright &copy;{{ date('Y') }} <a href="{{ NINJA_WEB_URL }}" target="_blank">Invoice Ninja</a>. All rights reserved.</div>
             @endif
         </div><!-- .wrap -->
     </div><!-- .bottom -->

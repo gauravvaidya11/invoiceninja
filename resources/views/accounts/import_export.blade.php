@@ -4,9 +4,7 @@
     @parent
 
     <style type="text/css">
-        .contact-file,
-        .task-file,
-        .payment-file {
+        .import-file {
             display: none;
         }
     </style>
@@ -25,6 +23,7 @@
     <div class="panel-body">
 
         {!! Former::open_for_files('/import')
+                ->onsubmit('return onFormSubmit(event)')
                 ->addClass('warn-on-exit') !!}
 
         {!! Former::select('source')
@@ -32,12 +31,32 @@
                 ->options(array_combine(\App\Services\ImportService::$sources, \App\Services\ImportService::$sources))
                 ->style('width: 200px') !!}
 
+        <br/>
         @foreach (\App\Services\ImportService::$entityTypes as $entityType)
-            {!! Former::file("{$entityType}_file")
-                    ->addGroupClass("{$entityType}-file") !!}
+            {!! Former::file($entityType)
+                    ->addGroupClass("import-file {$entityType}-file")
+                    ->label(Utils::pluralizeEntityType($entityType)) !!}
         @endforeach
 
-        {!! Former::actions( Button::info(trans('texts.upload'))->submit()->large()->appendIcon(Icon::create('open'))) !!}
+        <div id="jsonIncludes" style="display:none">
+            {!! Former::checkboxes('json_include_radio')
+                    ->label(trans('texts.include'))
+                    ->checkboxes([
+                        trans('texts.settings') => 'settings',
+                        trans('texts.data') => 'data',
+                    ]) !!}
+        </div>
+
+        <div id="notInovicePlaneImport">
+            {!! Former::plaintext(' ')->help(trans('texts.use_english_version')) !!}
+        </div>
+        <div id="inovicePlaneImport" style="display:none">
+            {!! Former::plaintext(' ')->help(trans('texts.invoiceplane_import', ['link' => link_to(INVOICEPLANE_IMPORT, 'turbo124/Plane2Ninja', ['target' => '_blank'])])) !!}
+        </div>
+
+        <br/>
+
+        {!! Former::actions( Button::info(trans('texts.upload'))->withAttributes(['id' => 'uploadButton'])->submit()->large()->appendIcon(Icon::create('open'))) !!}
         {!! Former::close() !!}
 
     </div>
@@ -51,84 +70,87 @@
   </div>
     <div class="panel-body">
         {!! Former::select('format')
-                ->onchange('setEntityTypesVisible()')
+                ->onchange('setCheckboxesEnabled()')
                 ->addOption('CSV', 'CSV')
                 ->addOption('XLS', 'XLS')
                 ->addOption('JSON', 'JSON')
-                ->style('max-width: 200px') !!}
+                ->style('max-width: 200px')
+                ->help('<br/>' . trans('texts.export_help') . (Utils::isSelfHost() ? '<b>' . trans('texts.selfhost_export_help') . '</b>' : '')) !!}
 
-        {!! Former::checkbox('entity_types')
-                ->label('include')
-                ->addGroupClass('entity-types')
-                ->checkboxes([
-                    trans('texts.clients') => array('name' => ENTITY_CLIENT, 'value' => 1),
-                    trans('texts.tasks') => array('name' => ENTITY_TASK, 'value' => 1),
-                    trans('texts.invoices') => array('name' => ENTITY_INVOICE, 'value' => 1),
-                    trans('texts.payments') => array('name' => ENTITY_PAYMENT, 'value' => 1),
-                ])->check(ENTITY_CLIENT)->check(ENTITY_TASK)->check(ENTITY_INVOICE)->check(ENTITY_PAYMENT) !!}
 
-        {!! Former::actions( Button::primary(trans('texts.download'))->submit()->large()->appendIcon(Icon::create('download-alt'))) !!}            
+        <div id="csvIncludes">
+            {!! Former::inline_radios('include_radio')
+                    ->onchange('setCheckboxesEnabled()')
+                    ->label(trans('texts.include'))
+                    ->radios([
+                        trans('texts.all') . ' &nbsp; ' => ['value' => 'all', 'name' => 'include'],
+                        trans('texts.selected') => ['value' => 'selected', 'name' => 'include'],
+                    ])->check('all') !!}
+
+
+            <div class="form-group entity-types">
+                <label class="control-label col-lg-4 col-sm-4"></label>
+                <div class="col-lg-2 col-sm-2">
+                    @include('partials/checkbox', ['field' => 'clients'])
+                    @include('partials/checkbox', ['field' => 'contacts'])
+                    @include('partials/checkbox', ['field' => 'credits'])
+                    @include('partials/checkbox', ['field' => 'tasks'])
+                </div>
+                <div class="col-lg-2 col-sm-2">
+                    @include('partials/checkbox', ['field' => 'invoices'])
+                    @include('partials/checkbox', ['field' => 'quotes'])
+                    @include('partials/checkbox', ['field' => 'recurring'])
+                    @include('partials/checkbox', ['field' => 'payments'])
+                </div>
+                <div class="col-lg-3 col-sm-3">
+                    @include('partials/checkbox', ['field' => 'products'])
+                    @include('partials/checkbox', ['field' => 'expenses'])
+                    @include('partials/checkbox', ['field' => 'vendors'])
+                    @include('partials/checkbox', ['field' => 'vendor_contacts'])
+                </div>
+            </div>
+        </div><br/>
+
+        {!! Former::actions( Button::primary(trans('texts.download'))->submit()->large()->appendIcon(Icon::create('download-alt'))) !!}
     </div>
 </div>
 {!! Former::close() !!}
 
 
-{!! Former::open('settings/cancel_account')->addClass('cancel-account') !!}
-<div class="panel panel-default">
-  <div class="panel-heading">
-    <h3 class="panel-title">{!! trans('texts.cancel_account') !!}</h3>
-  </div>
-    <div class="panel-body">
-    {!! Former::actions( Button::danger(trans('texts.cancel_account'))->large()->withAttributes(['onclick' => 'showConfirm()'])->appendIcon(Icon::create('trash'))) !!}
-    </div>
-</div>
-
-<div class="modal fade" id="confirmCancelModal" tabindex="-1" role="dialog" aria-labelledby="confirmCancelModalLabel" aria-hidden="true">
-  <div class="modal-dialog" style="min-width:150px">
-    <div class="modal-content">
-      <div class="modal-header">
-        <button type="button" class="close" data-dismiss="modal" aria-hidden="true">&times;</button>
-        <h4 class="modal-title" id="confirmCancelModalLabel">{!! trans('texts.cancel_account') !!}</h4>
-      </div>
-
-      <div style="background-color: #fff; padding-left: 16px; padding-right: 16px">
-        &nbsp;<p>{{ trans('texts.cancel_account_message') }}</p>&nbsp;
-        &nbsp;<p>{!! Former::textarea('reason')->placeholder(trans('texts.reason_for_canceling'))->raw() !!}</p>&nbsp;        
-      </div>
-
-      <div class="modal-footer" style="margin-top: 0px">
-        <button type="button" class="btn btn-default" data-dismiss="modal">{{ trans('texts.go_back') }}</button>
-        <button type="button" class="btn btn-danger" onclick="confirmCancel()">{{ trans('texts.cancel_account') }}</button>         
-      </div>
-
-    </div>
-  </div>
-</div>
-
-{!! Former::close() !!}  
-
-
 <script type="text/javascript">
+  $(function() {
+      setFileTypesVisible();
+      setCheckboxesEnabled();
+  });
 
-  function showConfirm() {
-    $('#confirmCancelModal').modal('show'); 
+  function onFormSubmit() {
+      $('#uploadButton').attr('disabled', true);
+      return true;
   }
 
-  function confirmCancel() {
-    $('form.cancel-account').submit();
-  }
-
-  function setEntityTypesVisible() {
-    var selector = '.entity-types input[type=checkbox]';
-    if ($('#format').val() === 'JSON') {
-        $(selector).attr('disabled', true);
-    } else {
-        $(selector).removeAttr('disabled');
-    }
+  function setCheckboxesEnabled() {
+      var $checkboxes = $('.entity-types input[type=checkbox]');
+      var include = $('input[name=include]:checked').val()
+      var format = $('#format').val();
+      if (include === 'all') {
+          $checkboxes.attr('disabled', true);
+      } else {
+          $checkboxes.removeAttr('disabled');
+      }
+      if (format === 'JSON') {
+          $('#csvIncludes').hide();
+      } else {
+          $('#csvIncludes').show();
+      }
   }
 
   function setFileTypesVisible() {
     var val = $('#source').val();
+    if (val === 'JSON') {
+        $('#jsonIncludes').show();
+    } else {
+        $('#jsonIncludes').hide();
+    }
     @foreach (\App\Services\ImportService::$entityTypes as $entityType)
         $('.{{ $entityType }}-file').hide();
     @endforeach
@@ -141,6 +163,24 @@
                     $('.{{ $entityType }}-file').show();
                 @endif
             @endforeach
+        }
+        @if ($source === IMPORT_JSON)
+            if (val === '{{ $source }}') {
+                $('.JSON-file').show();
+            }
+        @endif
+        if (val === '{{ IMPORT_JSON }}') {
+            $('#uploadButton').show();
+            $('#inovicePlaneImport').hide();
+            $('#notInovicePlaneImport').hide();
+        } else if (val === '{{ IMPORT_INVOICEPLANE }}') {
+            $('#uploadButton').hide();
+            $('#inovicePlaneImport').show();
+            $('#notInovicePlaneImport').hide();
+        } else {
+            $('#uploadButton').show();
+            $('#inovicePlaneImport').hide();
+            $('#notInovicePlaneImport').show();
         }
     @endforeach
   }

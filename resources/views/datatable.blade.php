@@ -7,9 +7,9 @@
     <thead>
     <tr>
         @foreach($columns as $i => $c)
-        <th align="center" valign="middle" class="head{{ $i }}" 
+        <th align="center" valign="middle" class="head{{ $i }}"
             @if ($c == 'checkbox')
-                style="width:20px"            
+                style="width:20px"
             @endif
         >
             @if ($c == 'checkbox' && $hasCheckboxes = true)
@@ -32,7 +32,7 @@
     </tbody>
 </table>
 <script type="text/javascript">
-    @if (isset($values['entityType']))
+    @if (isset($values['clientId']) && $values['clientId'])
             window.load_{{ $values['entityType'] }} = function load_{{ $values['entityType'] }}() {
                 load_{{ $class }}();
             }
@@ -42,9 +42,15 @@
         });
     @endif
 
+    function refreshDatatable{{ isset($values['entityType']) ? '_' . $values['entityType'] : '' }}() {
+        window['dataTable{{ isset($values['entityType']) ? '_' . $values['entityType'] : '' }}'].api().ajax.reload();
+    }
+
     function load_{{ $class }}() {
-        jQuery('.{{ $class }}').dataTable({
-            "fnRowCallback": function(row, data) { 
+        window['dataTable{{ isset($values['entityType']) ? '_' . $values['entityType'] : '' }}'] = jQuery('.{{ $class }}').dataTable({
+            "stateSave": true,
+            "stateDuration": 0,
+            "fnRowCallback": function(row, data) {
                 if (data[0].indexOf('ENTITY_DELETED') > 0) {
                     $(row).addClass('entityDeleted');
                 }
@@ -53,20 +59,24 @@
                 }
             },
             "bAutoWidth": false,
-            @if (isset($hasCheckboxes) && $hasCheckboxes)
-            'aaSorting': [['1', 'asc']],
-            // Disable sorting on the first column
-            "aoColumnDefs": [ 
+            "aoColumnDefs": [
+                @if(isset($values['entityType']) && $values['entityType'] == 'tickets')
+                {
+                    'bSortable': false,
+                    'aTargets': [ 0, 3 , 7, {{ count($columns) - 1 }} ]
+                },
+                @elseif (isset($hasCheckboxes) && $hasCheckboxes)
+                // Disable sorting on the first column
                 {
                     'bSortable': false,
                     'aTargets': [ 0, {{ count($columns) - 1 }} ]
                 },
+                @endif
                 {
                     'sClass': 'right',
                     'aTargets': {{ isset($values['rightAlign']) ? json_encode($values['rightAlign']) : '[]' }}
                 }
             ],
-            @endif
             @foreach ($options as $k => $o)
             {!! json_encode($k) !!}: {!! json_encode($o) !!},
             @endforeach
@@ -74,9 +84,23 @@
             {!! json_encode($k) !!}: {!! $o !!},
             @endforeach
             "fnDrawCallback": function(oSettings) {
-                if (window.onDatatableReady) {
-                    window.onDatatableReady();
-                }
+                @if (isset($values['entityType']))
+                    if (window.onDatatableReady_{{ $values['entityType'] }}) {
+                        window.onDatatableReady_{{ $values['entityType'] }}();
+                    } else if (window.onDatatableReady) {
+                        window.onDatatableReady();
+                    }
+                @else
+                    if (window.onDatatableReady) {
+                        window.onDatatableReady();
+                    }
+                @endif
+            },
+            "stateLoadParams": function (settings, data) {
+                // don't save filter to local storage
+                data.search.search = "";
+                // always start on first page of results
+                data.start = 0;
             }
         });
     }

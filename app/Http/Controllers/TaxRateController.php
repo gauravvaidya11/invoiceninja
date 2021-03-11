@@ -1,22 +1,18 @@
-<?php namespace App\Http\Controllers;
+<?php
 
-use Auth;
-use Str;
-use DB;
-use Datatable;
-use Utils;
-use URL;
-use View;
-use Input;
-use Session;
-use Redirect;
-
-use App\Models\TaxRate;
-use App\Services\TaxRateService;
-use App\Ninja\Repositories\TaxRateRepository;
+namespace App\Http\Controllers;
 
 use App\Http\Requests\CreateTaxRateRequest;
 use App\Http\Requests\UpdateTaxRateRequest;
+use App\Models\TaxRate;
+use App\Ninja\Repositories\TaxRateRepository;
+use App\Services\TaxRateService;
+use Auth;
+use Input;
+use Redirect;
+use Session;
+use URL;
+use View;
 
 class TaxRateController extends BaseController
 {
@@ -25,7 +21,7 @@ class TaxRateController extends BaseController
 
     public function __construct(TaxRateService $taxRateService, TaxRateRepository $taxRateRepo)
     {
-        parent::__construct();
+        //parent::__construct();
 
         $this->taxRateService = $taxRateService;
         $this->taxRateRepo = $taxRateRepo;
@@ -70,19 +66,18 @@ class TaxRateController extends BaseController
         $this->taxRateRepo->save($request->input());
 
         Session::flash('message', trans('texts.created_tax_rate'));
+
         return Redirect::to('settings/' . ACCOUNT_TAX_RATES);
     }
 
     public function update(UpdateTaxRateRequest $request, $publicId)
     {
-        $taxRate = TaxRate::scope($publicId)->firstOrFail();
-        
-        $this->taxRateRepo->save($request->input(), $taxRate);
-        
+        $this->taxRateRepo->save($request->input(), $request->entity());
+
         Session::flash('message', trans('texts.updated_tax_rate'));
+
         return Redirect::to('settings/' . ACCOUNT_TAX_RATES);
     }
-
 
     public function bulk()
     {

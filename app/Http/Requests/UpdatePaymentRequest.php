@@ -1,9 +1,8 @@
-<?php namespace app\Http\Requests;
+<?php
 
-use App\Http\Requests\Request;
-use Illuminate\Validation\Factory;
+namespace App\Http\Requests;
 
-class UpdatePaymentRequest extends Request
+class UpdatePaymentRequest extends PaymentRequest
 {
     /**
      * Determine if the user is authorized to make this request.
@@ -12,7 +11,7 @@ class UpdatePaymentRequest extends Request
      */
     public function authorize()
     {
-        return true;
+        return $this->entity() && $this->user()->can('edit', $this->entity());
     }
 
     /**
@@ -23,6 +22,5 @@ class UpdatePaymentRequest extends Request
     public function rules()
     {
         return [];
-
     }
 }

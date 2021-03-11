@@ -1,97 +1,79 @@
-<?php namespace App\Services;
+<?php
 
-use Utils;
-use URL;
-use Auth;
-use App\Services\BaseService;
-use App\Ninja\Repositories\VendorRepository;
+namespace App\Services;
+
+use App\Models\Vendor;
+use App\Ninja\Datatables\VendorDatatable;
 use App\Ninja\Repositories\NinjaRepository;
+use App\Ninja\Repositories\VendorRepository;
+use Auth;
+use Utils;
 
+/**
+ * Class VendorService.
+ */
 class VendorService extends BaseService
 {
+    /**
+     * @var VendorRepository
+     */
     protected $vendorRepo;
+
+    /**
+     * @var DatatableService
+     */
     protected $datatableService;
 
-    public function __construct(VendorRepository $vendorRepo, DatatableService $datatableService, NinjaRepository $ninjaRepo)
-    {
-        $this->vendorRepo       = $vendorRepo;
-        $this->ninjaRepo        = $ninjaRepo;
+    /**
+     * VendorService constructor.
+     *
+     * @param VendorRepository $vendorRepo
+     * @param DatatableService $datatableService
+     * @param NinjaRepository  $ninjaRepo
+     */
+    public function __construct(
+        VendorRepository $vendorRepo,
+        DatatableService $datatableService,
+        NinjaRepository $ninjaRepo
+    ) {
+        $this->vendorRepo = $vendorRepo;
+        $this->ninjaRepo = $ninjaRepo;
         $this->datatableService = $datatableService;
     }
 
+    /**
+     * @return VendorRepository
+     */
     protected function getRepo()
     {
         return $this->vendorRepo;
     }
 
-    public function save($data)
+    /**
+     * @param array       $data
+     * @param Vendor|null $vendor
+     *
+     * @return mixed|null
+     */
+    public function save(array $data, Vendor $vendor = null)
     {
-        if (Auth::user()->account->isNinjaAccount() && isset($data['pro_plan_paid'])) {
-            $this->ninjaRepo->updateProPlanPaid($data['public_id'], $data['pro_plan_paid']);
-        }
-
-        return $this->vendorRepo->save($data);
+        return $this->vendorRepo->save($data, $vendor);
     }
 
+    /**
+     * @param $search
+     *
+     * @return \Illuminate\Http\JsonResponse
+     */
     public function getDatatable($search)
     {
+        $datatable = new VendorDatatable();
         $query = $this->vendorRepo->find($search);
 
-        return $this->createDatatable(ENTITY_VENDOR, $query);
-    }
+        if (! Utils::hasPermission('view_vendor')) {
+            $query->where('vendors.user_id', '=', Auth::user()->id);
+        }
 
-    protected function getDatatableColumns($entityType, $hideVendor)
-    {
-        return [
-            [
-                'name',
-                function ($model) {
-                    return link_to("vendors/{$model->public_id}", $model->name ?: '');
-                }
-            ],
-            [
-                'city',
-                function ($model) {
-                    return $model->city;
-                }
-            ],
-            [
-                'work_phone',
-                function ($model) {
-                    return $model->work_phone;
-                }
-            ],
-            [
-                'email',
-                function ($model) {
-                    return link_to("vendors/{$model->public_id}", $model->email ?: '');
-                }
-            ],
-            [
-                'vendors.created_at',
-                function ($model) {
-                    return Utils::timestampToDateString(strtotime($model->created_at));
-                }
-            ],
-        ];
-    }
-
-    protected function getDatatableActions($entityType)
-    {
-        return [
-            [
-                trans('texts.edit_vendor'),
-                function ($model) {
-                    return URL::to("vendors/{$model->public_id}/edit");
-                }
-            ],
-            [],
-            [
-                trans('texts.enter_expense'),
-                function ($model) {
-                    return URL::to("expenses/create/{$model->public_id}");
-                }
-            ]
-        ];
+        return $this->datatableService->createDatatable($datatable, $query);
     }
 }

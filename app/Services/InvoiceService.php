@@ -1,270 +1,168 @@
-<?php namespace App\Services;
+<?php
 
+namespace App\Services;
+
+use App\Events\QuoteInvitationWasApproved;
+use App\Models\Client;
+use App\Models\Invitation;
+use App\Models\Invoice;
+use App\Ninja\Datatables\InvoiceDatatable;
+use App\Ninja\Repositories\ClientRepository;
+use App\Ninja\Repositories\InvoiceRepository;
+use App\Jobs\DownloadInvoices;
 use Auth;
 use Utils;
-use URL;
-use App\Services\BaseService;
-use App\Ninja\Repositories\InvoiceRepository;
-use App\Ninja\Repositories\ClientRepository;
-use App\Events\QuoteInvitationWasApproved;
-use App\Models\Invitation;
 
 class InvoiceService extends BaseService
 {
+    /**
+     * @var ClientRepository
+     */
     protected $clientRepo;
+
+    /**
+     * @var InvoiceRepository
+     */
     protected $invoiceRepo;
+
+    /**
+     * @var DatatableService
+     */
     protected $datatableService;
 
-    public function __construct(ClientRepository $clientRepo, InvoiceRepository $invoiceRepo, DatatableService $datatableService)
-    {
+    /**
+     * InvoiceService constructor.
+     *
+     * @param ClientRepository  $clientRepo
+     * @param InvoiceRepository $invoiceRepo
+     * @param DatatableService  $datatableService
+     */
+    public function __construct(
+        ClientRepository $clientRepo,
+        InvoiceRepository $invoiceRepo,
+        DatatableService $datatableService
+    ) {
         $this->clientRepo = $clientRepo;
         $this->invoiceRepo = $invoiceRepo;
         $this->datatableService = $datatableService;
     }
 
+    /**
+     * @return InvoiceRepository
+     */
     protected function getRepo()
     {
         return $this->invoiceRepo;
     }
 
-    public function save($data)
+    /**
+     * @param $ids
+     * @param $action
+     *
+     * @return int
+     */
+    public function bulk($ids, $action)
+    {
+        if ($action == 'download') {
+            $invoices = $this->getRepo()->findByPublicIdsWithTrashed($ids);
+            dispatch(new DownloadInvoices(Auth::user(), $invoices));
+            return count($invoices);
+        } else {
+            return parent::bulk($ids, $action);
+        }
+    }
+
+    /**
+     * @param array        $data
+     * @param Invoice|null $invoice
+     *
+     * @return \App\Models\Invoice|Invoice|mixed
+     */
+    public function save(array $data, Invoice $invoice = null)
     {
         if (isset($data['client'])) {
-            $client = $this->clientRepo->save($data['client']);
-            $data['client_id'] = $client->id;
-        }
-
-        $invoice = $this->invoiceRepo->save($data);
-        
-        $client = $invoice->client;
-        $client->load('contacts');
-        $sendInvoiceIds = [];
-
-        foreach ($client->contacts as $contact) {
-            if ($contact->send_invoice || count($client->contacts) == 1) {
-                $sendInvoiceIds[] = $contact->id;
+            $canSaveClient = false;
+            $canViewClient = false;
+            $clientPublicId = array_get($data, 'client.public_id') ?: array_get($data, 'client.id');
+            if (empty($clientPublicId) || intval($clientPublicId) < 0) {
+                $canSaveClient = Auth::user()->can('createEntity', ENTITY_CLIENT);
+            } else {
+                $client = Client::scope($clientPublicId)->first();
+                $canSaveClient = Auth::user()->can('edit', $client);
+                $canViewClient = Auth::user()->can('view', $client);
+            }
+            if ($canSaveClient) {
+                $client = $this->clientRepo->save($data['client']);
+            }
+            if ($canSaveClient || $canViewClient) {
+                $data['client_id'] = $client->id;
             }
         }
-        
-        foreach ($client->contacts as $contact) {
-            $invitation = Invitation::scope()->whereContactId($contact->id)->whereInvoiceId($invoice->id)->first();
 
-            if (in_array($contact->id, $sendInvoiceIds) && !$invitation) {
-                $invitation = Invitation::createNew();
-                $invitation->invoice_id = $invoice->id;
-                $invitation->contact_id = $contact->id;
-                $invitation->invitation_key = str_random(RANDOM_KEY_LENGTH);
-                $invitation->save();
-            } elseif (!in_array($contact->id, $sendInvoiceIds) && $invitation) {
-                $invitation->delete();
-            }
+        return $this->invoiceRepo->save($data, $invoice);
+    }
+
+    /**
+     * @param $quote
+     * @param Invitation|null $invitation
+     *
+     * @return mixed
+     */
+    public function convertQuote($quote)
+    {
+        $account = $quote->account;
+        $invoice = $this->invoiceRepo->cloneInvoice($quote, $quote->id);
+
+        if ($account->auto_archive_quote) {
+            $this->invoiceRepo->archive($quote);
         }
 
         return $invoice;
     }
 
-    public function convertQuote($quote, $invitation = null)
+    /**
+     * @param $quote
+     * @param Invitation|null $invitation
+     *
+     * @return mixed|null
+     */
+    public function approveQuote($quote, Invitation $invitation = null)
     {
-        $invoice = $this->invoiceRepo->cloneInvoice($quote, $quote->id);
-        if (!$invitation) {
-            return $invoice;
-        }
-        
-        foreach ($invoice->invitations as $invoiceInvitation) {
-            if ($invitation->contact_id == $invoiceInvitation->contact_id) {
-                return $invoiceInvitation->invitation_key;
-            }
-        }
-    }
+        $account = $quote->account;
 
-    public function approveQuote($quote, $invitation = null)
-    {
-        $account = Auth::user()->account;
-        if (!$quote->is_quote || $quote->quote_invoice_id) {
+        if (! $account->hasFeature(FEATURE_QUOTES) || ! $quote->isType(INVOICE_TYPE_QUOTE) || $quote->quote_invoice_id) {
             return null;
         }
-        
-        if ($account->auto_convert_quote || ! $account->isPro()) {
-            $invoice = $this->convertQuote($quote, $invitation);
 
-            event(new QuoteInvitationWasApproved($quote, $invoice, $invitation));
+        event(new QuoteInvitationWasApproved($quote, $invitation));
 
-            return $invoice;
+        if ($account->auto_convert_quote) {
+            $invoice = $this->convertQuote($quote);
+
+            foreach ($invoice->invitations as $invoiceInvitation) {
+                if ($invitation->contact_id == $invoiceInvitation->contact_id) {
+                    $invitation = $invoiceInvitation;
+                }
+            }
         } else {
             $quote->markApproved();
-
-            event(new QuoteInvitationWasApproved($quote, null, $invitation));
-            
-            foreach ($quote->invitations as $invoiceInvitation) {
-                if ($invitation->contact_id == $invoiceInvitation->contact_id) {
-                    return $invoiceInvitation->invitation_key;
-                }
-            }
         }
+
+        return $invitation->invitation_key;
     }
 
-    public function getDatatable($accountId, $clientPublicId = null, $entityType, $search)
+    public function getDatatable($accountId, $clientPublicId, $entityType, $search)
     {
+        $datatable = new InvoiceDatatable(true, $clientPublicId);
+        $datatable->entityType = $entityType;
+
         $query = $this->invoiceRepo->getInvoices($accountId, $clientPublicId, $entityType, $search)
-                    ->where('invoices.is_quote', '=', $entityType == ENTITY_QUOTE ? true : false);
+                    ->where('invoices.invoice_type_id', '=', $entityType == ENTITY_QUOTE ? INVOICE_TYPE_QUOTE : INVOICE_TYPE_STANDARD);
 
-        return $this->createDatatable($entityType, $query, !$clientPublicId);
-    }
-
-    protected function getDatatableColumns($entityType, $hideClient)
-    {
-        return [
-            [
-                'invoice_number',
-                function ($model) use ($entityType) {
-                    return link_to("{$entityType}s/{$model->public_id}/edit", $model->invoice_number, ['class' => Utils::getEntityRowClass($model)]); 
-                }
-            ],
-            [
-                'client_name',
-                function ($model) {
-                    return link_to("clients/{$model->client_public_id}", Utils::getClientDisplayName($model));
-                },
-                ! $hideClient
-            ],
-            [
-                'invoice_date',
-                function ($model) {
-                    return Utils::fromSqlDate($model->invoice_date);
-                }
-            ],
-            [
-                'amount',
-                function ($model) {
-                    return Utils::formatMoney($model->amount, $model->currency_id, $model->country_id);
-                }
-            ],
-            [
-                'balance',
-                function ($model) {
-                    return $model->partial > 0 ?
-                        trans('texts.partial_remaining', [
-                            'partial' => Utils::formatMoney($model->partial, $model->currency_id, $model->country_id),
-                            'balance' => Utils::formatMoney($model->balance, $model->currency_id, $model->country_id)]
-                        ) :
-                        Utils::formatMoney($model->balance, $model->currency_id, $model->country_id);
-                },
-                $entityType == ENTITY_INVOICE
-            ],
-            [
-                'due_date',
-                function ($model) {
-                    return Utils::fromSqlDate($model->due_date);
-                },
-            ],
-            [
-                'invoice_status_name',
-                function ($model) {
-                    return $model->quote_invoice_id ? link_to("invoices/{$model->quote_invoice_id}/edit", trans('texts.converted')) : self::getStatusLabel($model);
-                }
-            ]
-        ];
-    }
-
-    protected function getDatatableActions($entityType)
-    {
-        return [
-            [
-                trans("texts.edit_{$entityType}"),
-                function ($model) use ($entityType) {
-                    return URL::to("{$entityType}s/{$model->public_id}/edit");
-                }
-            ],
-            [
-                trans("texts.clone_{$entityType}"),
-                function ($model) use ($entityType) {
-                    return URL::to("{$entityType}s/{$model->public_id}/clone");
-                }
-            ],
-            [
-                trans("texts.view_history"),
-                function ($model) use ($entityType) {
-                    return URL::to("{$entityType}s/{$entityType}_history/{$model->public_id}");
-                }
-            ],
-            [],
-            [
-                trans("texts.mark_sent"),
-                function ($model) {
-                    return "javascript:markEntity({$model->public_id})";
-                },
-                function ($model) {
-                    return $model->invoice_status_id < INVOICE_STATUS_SENT;
-                }
-            ],
-            [
-                trans('texts.enter_payment'),
-                function ($model) {
-                    return URL::to("payments/create/{$model->client_public_id}/{$model->public_id}");
-                },
-                function ($model) use ($entityType) {
-                    return $entityType == ENTITY_INVOICE && $model->balance > 0;
-                }
-            ],
-            [
-                trans("texts.view_quote"),
-                function ($model) {
-                    return URL::to("quotes/{$model->quote_id}/edit");
-                },
-                function ($model) use ($entityType) {
-                    return $entityType == ENTITY_INVOICE && $model->quote_id;
-                }
-            ],
-            [
-                trans("texts.view_invoice"),
-                function ($model) {
-                    return URL::to("invoices/{$model->quote_invoice_id}/edit");
-                },
-                function ($model) use ($entityType) {
-                    return $entityType == ENTITY_QUOTE && $model->quote_invoice_id;
-                }
-            ],
-            [
-                trans("texts.convert_to_invoice"),
-                function ($model) {
-                    return "javascript:convertEntity({$model->public_id})";
-                },
-                function ($model) use ($entityType) {
-                    return $entityType == ENTITY_QUOTE && ! $model->quote_invoice_id;
-                }
-            ]
-        ];
-    }
-
-    private function getStatusLabel($model)
-    {
-        // check if invoice is overdue
-        if (Utils::parseFloat($model->balance) && $model->due_date && $model->due_date != '0000-00-00') {
-            if (\DateTime::createFromFormat('Y-m-d', $model->due_date) < new \DateTime("now")) {
-                return "<h4><div class=\"label label-danger\">".trans('texts.overdue')."</div></h4>";
-            }
+        if (! Utils::hasPermission('view_' . $entityType)) {
+            $query->where('invoices.user_id', '=', Auth::user()->id);
         }
 
-        $label = trans("texts.status_" . strtolower($model->invoice_status_name));
-        $class = 'default';
-        switch ($model->invoice_status_id) {
-            case INVOICE_STATUS_SENT:
-                $class = 'info';
-                break;
-            case INVOICE_STATUS_VIEWED:
-                $class = 'warning';
-                break;
-            case INVOICE_STATUS_APPROVED:
-                $class = 'success';
-                break;
-            case INVOICE_STATUS_PARTIAL:
-                $class = 'primary';
-                break;
-            case INVOICE_STATUS_PAID:
-                $class = 'success';
-                break;
-        }
-        return "<h4><div class=\"label label-{$class}\">$label</div></h4>";
+        return $this->datatableService->createDatatable($datatable, $query);
     }
-    
 }

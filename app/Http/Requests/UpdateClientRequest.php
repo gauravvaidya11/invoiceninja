@@ -1,9 +1,8 @@
-<?php namespace app\Http\Requests;
+<?php
 
-use App\Http\Requests\Request;
-use Illuminate\Validation\Factory;
+namespace App\Http\Requests;
 
-class UpdateClientRequest extends Request
+class UpdateClientRequest extends ClientRequest
 {
     /**
      * Determine if the user is authorized to make this request.
@@ -12,7 +11,7 @@ class UpdateClientRequest extends Request
      */
     public function authorize()
     {
-        return true;
+        return $this->entity() && $this->user()->can('edit', $this->entity());
     }
 
     /**
@@ -22,8 +21,16 @@ class UpdateClientRequest extends Request
      */
     public function rules()
     {
-        return [
-            'contacts' => 'valid_contacts',
-        ];
+        if (! $this->entity()) {
+            return [];
+        }
+
+        $rules = [];
+
+        if ($this->user()->account->client_number_counter) {
+            $rules['id_number'] = 'unique:clients,id_number,'.$this->entity()->id.',id,account_id,' . $this->user()->account_id;
+        }
+
+        return $rules;
     }
 }

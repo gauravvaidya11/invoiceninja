@@ -1,23 +1,36 @@
-<?php namespace App\Events;
+<?php
 
-use App\Events\Event;
+namespace App\Events;
 
+use App\Models\Invitation;
 use Illuminate\Queue\SerializesModels;
 
-class InvoiceInvitationWasEmailed extends Event {
+/**
+ * Class InvoiceInvitationWasEmailed.
+ */
+class InvoiceInvitationWasEmailed extends Event
+{
+    use SerializesModels;
 
-	use SerializesModels;
-    
+    /**
+     * @var Invitation
+     */
     public $invitation;
 
-	/**
-	 * Create a new event instance.
-	 *
-	 * @return void
-	 */
-    public function __construct($invitation)
+    /**
+     * @var string
+     */
+    public $notes;
+
+    /**
+     * Create a new event instance.
+     *
+     * @param Invitation $invitation
+     * @param mixed      $notes
+     */
+    public function __construct(Invitation $invitation, $notes)
     {
         $this->invitation = $invitation;
+        $this->notes = $notes;
     }
-
 }

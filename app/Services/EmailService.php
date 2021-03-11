@@ -1,24 +1,42 @@
-<?php namespace App\Services;
+<?php
 
-use Carbon;
+namespace App\Services;
+
 use App\Models\Invitation;
 use App\Ninja\Mailers\UserMailer;
+use Carbon;
 
-class EmailService {
-
+/**
+ * Class EmailService.
+ */
+class EmailService
+{
+    /**
+     * @var UserMailer
+     */
     protected $userMailer;
 
+    /**
+     * EmailService constructor.
+     *
+     * @param UserMailer $userMailer
+     */
     public function __construct(UserMailer $userMailer)
     {
         $this->userMailer = $userMailer;
     }
 
+    /**
+     * @param $messageId
+     *
+     * @return bool
+     */
     public function markOpened($messageId)
     {
-        $invitation = Invitation::whereMessageId($messageId)
-                        ->first();
+        /** @var \App\Models\Invitation $invitation */
+        $invitation = Invitation::whereMessageId($messageId)->first();
 
-        if (!$invitation) {
+        if (! $invitation) {
             return false;
         }
 
@@ -28,13 +46,20 @@ class EmailService {
         return true;
     }
 
+    /**
+     * @param $messageId
+     * @param $error
+     *
+     * @return bool
+     */
     public function markBounced($messageId, $error)
     {
+        /** @var \App\Models\Invitation $invitation */
         $invitation = Invitation::with('user', 'invoice', 'contact')
                         ->whereMessageId($messageId)
                         ->first();
 
-        if (!$invitation) {
+        if (! $invitation) {
             return false;
         }
 

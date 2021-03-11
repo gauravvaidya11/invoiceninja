@@ -1,22 +1,29 @@
-<?php namespace App\Events;
+<?php
 
-use App\Events\Event;
+namespace App\Events;
 
+use App\Models\Invoice;
 use Illuminate\Queue\SerializesModels;
 
-class InvoiceWasCreated extends Event {
+/**
+ * Class InvoiceWasCreated.
+ */
+class InvoiceWasCreated extends Event
+{
+    use SerializesModels;
 
-	use SerializesModels;
+    /**
+     * @var Invoice
+     */
     public $invoice;
-    
-	/**
-	 * Create a new event instance.
-	 *
-	 * @return void
-	 */
-    public function __construct($invoice)
+
+    /**
+     * Create a new event instance.
+     *
+     * @param Invoice $invoice
+     */
+    public function __construct(Invoice $invoice)
     {
         $this->invoice = $invoice;
     }
-
 }

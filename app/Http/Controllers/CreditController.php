@@ -1,26 +1,31 @@
-<?php namespace App\Http\Controllers;
+<?php
 
-use Datatable;
+namespace App\Http\Controllers;
+
+use App\Http\Requests\CreateCreditRequest;
+use App\Http\Requests\CreditRequest;
+use App\Http\Requests\UpdateCreditRequest;
+use App\Models\Client;
+use App\Models\Credit;
+use App\Ninja\Datatables\CreditDatatable;
+use App\Ninja\Repositories\CreditRepository;
+use App\Services\CreditService;
 use Input;
 use Redirect;
 use Session;
 use URL;
 use Utils;
 use View;
-use Validator;
-use App\Models\Client;
-use App\Services\CreditService;
-use App\Ninja\Repositories\CreditRepository;
-use App\Http\Requests\CreateCreditRequest;
 
 class CreditController extends BaseController
 {
     protected $creditRepo;
     protected $creditService;
+    protected $entityType = ENTITY_CREDIT;
 
     public function __construct(CreditRepository $creditRepo, CreditService $creditService)
     {
-        parent::__construct();
+        // parent::__construct();
 
         $this->creditRepo = $creditRepo;
         $this->creditService = $creditService;
@@ -33,20 +38,11 @@ class CreditController extends BaseController
      */
     public function index()
     {
-        return View::make('list', array(
+        return View::make('list_wrapper', [
             'entityType' => ENTITY_CREDIT,
+            'datatable' => new CreditDatatable(),
             'title' => trans('texts.credits'),
-            'sortCol' => '4',
-            'columns' => Utils::trans([
-              'checkbox',
-              'client',
-              'credit_amount',
-              'credit_balance',
-              'credit_date',
-              'private_notes',
-              ''
-            ]),
-        ));
+        ]);
     }
 
     public function getDatatable($clientPublicId = null)
@@ -54,44 +50,73 @@ class CreditController extends BaseController
         return $this->creditService->getDatatable($clientPublicId, Input::get('sSearch'));
     }
 
-    public function create($clientPublicId = 0)
+    public function create(CreditRequest $request)
     {
-        $data = array(
-            'clientPublicId' => Input::old('client') ? Input::old('client') : $clientPublicId,
-            //'invoicePublicId' => Input::old('invoice') ? Input::old('invoice') : $invoicePublicId,
+        $data = [
+            'clientPublicId' => Input::old('client') ? Input::old('client') : ($request->client_id ?: 0),
             'credit' => null,
             'method' => 'POST',
             'url' => 'credits',
             'title' => trans('texts.new_credit'),
-            //'invoices' => Invoice::scope()->with('client', 'invoice_status')->orderBy('invoice_number')->get(),
-            'clients' => Client::scope()->with('contacts')->orderBy('name')->get(), );
+            'clients' => Client::scope()->with('contacts')->orderBy('name')->get(),
+        ];
 
         return View::make('credits.edit', $data);
     }
 
     public function edit($publicId)
     {
-        $credit = Credit::scope($publicId)->firstOrFail();
+        $credit = Credit::withTrashed()->scope($publicId)->firstOrFail();
+
+        $this->authorize('view', $credit);
+
         $credit->credit_date = Utils::fromSqlDate($credit->credit_date);
 
-        $data = array(
-            'client' => null,
+        $data = [
+            'client' => $credit->client,
+            'clientPublicId' => $credit->client->public_id,
             'credit' => $credit,
             'method' => 'PUT',
             'url' => 'credits/'.$publicId,
             'title' => 'Edit Credit',
-            'clients' => Client::scope()->with('contacts')->orderBy('name')->get(), );
+            'clients' => null,
+        ];
 
-        return View::make('credit.edit', $data);
+        return View::make('credits.edit', $data);
+    }
+
+    /**
+     * @param $publicId
+     *
+     * @return \Illuminate\Http\RedirectResponse
+     */
+    public function show($publicId)
+    {
+        Session::reflash();
+
+        return Redirect::to("credits/{$publicId}/edit");
+    }
+
+    public function update(UpdateCreditRequest $request)
+    {
+        $credit = $request->entity();
+
+        return $this->save($credit);
     }
 
     public function store(CreateCreditRequest $request)
     {
-        $credit = $this->creditRepo->save($request->input());
-        
-        Session::flash('message', trans('texts.created_credit'));
-        
-        return redirect()->to($credit->client->getRoute());
+        return $this->save();
+    }
+
+    private function save($credit = null)
+    {
+        $credit = $this->creditService->save(Input::all(), $credit);
+
+        $message = $credit->wasRecentlyCreated ? trans('texts.created_credit') : trans('texts.updated_credit');
+        Session::flash('message', $message);
+
+        return redirect()->to("clients/{$credit->client->public_id}#credits");
     }
 
     public function bulk()
@@ -105,6 +130,6 @@ class CreditController extends BaseController
             Session::flash('message', $message);
         }
 
-        return Redirect::to('credits');
+        return $this->returnBulk(ENTITY_CREDIT, $action, $ids);
     }
 }

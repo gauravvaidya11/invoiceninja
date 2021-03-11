@@ -1,11 +1,11 @@
-<?php namespace app\Http\Requests;
+<?php
 
-use App\Http\Requests\Request;
-use Illuminate\Validation\Factory;
+namespace App\Http\Requests;
 
-class CreateTaxRateRequest extends Request
+class CreateTaxRateRequest extends TaxRateRequest
 {
-    // Expenses 
+    // Expenses
+
     /**
      * Determine if the user is authorized to make this request.
      *
@@ -13,7 +13,7 @@ class CreateTaxRateRequest extends Request
      */
     public function authorize()
     {
-        return true;
+        return $this->user()->hasPermission('admin');
     }
 
     /**

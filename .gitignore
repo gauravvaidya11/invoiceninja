@@ -8,7 +8,9 @@
 /public/build
 /public/packages
 /public/vendor
-/storage
+/resources/assets/bower
+/storage/*.key
+/storage/documents
 /bootstrap/compiled.php
 /bootstrap/environment.php
 /vendor
@@ -18,10 +20,11 @@ Thumbs.db
 /.env
 /.env.development.php
 /.env.php
-
+/docs/_build
 /error_log
 /auth.json
 /public/error_log
+/Modules
 
 /ninja.sublime-project
 /ninja.sublime-workspace
@@ -31,8 +34,11 @@ Thumbs.db
 /.project
 tests/_output/
 tests/_bootstrap.php
+tests/_support/_generated/
 
 # composer stuff
 /c3.php
 
 _ide_helper.php
+storage/version.txt
+storage/framework/.DS_Store

@@ -1,7 +1,9 @@
-<?php namespace App\Ninja\Transformers;
+<?php
+
+namespace App\Ninja\Transformers;
 
 use App\Models\Account;
-use App\Models\Client;
+use Auth;
 use League\Fractal\TransformerAbstract;
 
 class EntityTransformer extends TransformerAbstract
@@ -35,6 +37,31 @@ class EntityTransformer extends TransformerAbstract
 
     protected function getTimestamp($date)
     {
-        return $date ? $date->getTimestamp() : null;
+        if (method_exists($date, 'getTimestamp')) {
+            return $date->getTimestamp();
+        } elseif (is_string($date)) {
+            return strtotime($date);
+        } else {
+            return null;
+        }
+    }
+
+    public function getDefaultIncludes()
+    {
+        return $this->defaultIncludes;
+    }
+
+    protected function getDefaults($entity)
+    {
+        $data = [
+            'account_key' => $this->account->account_key,
+            'is_owner' => (bool) (Auth::check() && Auth::user()->owns($entity)),
+        ];
+
+        if ($entity->relationLoaded('user')) {
+            $data['user_id'] = (int) $entity->user->public_id + 1;
+        }
+
+        return $data;
     }
 }

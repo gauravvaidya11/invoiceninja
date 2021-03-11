@@ -1,17 +1,34 @@
-<?php namespace App\Services;
+<?php
 
-use Utils;
-use URL;
-use Auth;
-use App\Services\BaseService;
+namespace App\Services;
+
+use App\Ninja\Datatables\ClientDatatable;
 use App\Ninja\Repositories\ClientRepository;
 use App\Ninja\Repositories\NinjaRepository;
+use Auth;
 
+/**
+ * Class ClientService.
+ */
 class ClientService extends BaseService
 {
+    /**
+     * @var ClientRepository
+     */
     protected $clientRepo;
+
+    /**
+     * @var DatatableService
+     */
     protected $datatableService;
 
+    /**
+     * ClientService constructor.
+     *
+     * @param ClientRepository $clientRepo
+     * @param DatatableService $datatableService
+     * @param NinjaRepository  $ninjaRepo
+     */
     public function __construct(ClientRepository $clientRepo, DatatableService $datatableService, NinjaRepository $ninjaRepo)
     {
         $this->clientRepo = $clientRepo;
@@ -19,119 +36,41 @@ class ClientService extends BaseService
         $this->datatableService = $datatableService;
     }
 
+    /**
+     * @return ClientRepository
+     */
     protected function getRepo()
     {
         return $this->clientRepo;
     }
 
-    public function save($data)
+    /**
+     * @param $data
+     * @param null $client
+     *
+     * @return mixed|null
+     */
+    public function save($data, $client = null)
     {
-        if (Auth::user()->account->isNinjaAccount() && isset($data['pro_plan_paid'])) {
-            $this->ninjaRepo->updateProPlanPaid($data['public_id'], $data['pro_plan_paid']);
+        if (Auth::user()->account->isNinjaAccount() && isset($data['plan'])) {
+            $this->ninjaRepo->updatePlanDetails($data['public_id'], $data);
         }
 
-        return $this->clientRepo->save($data);
+        return $this->clientRepo->save($data, $client);
     }
 
-    public function getDatatable($search)
+    /**
+     * @param $search
+     * @param $userId
+     *
+     * @return \Illuminate\Http\JsonResponse
+     */
+    public function getDatatable($search, $userId)
     {
-        $query = $this->clientRepo->find($search);
+        $datatable = new ClientDatatable();
 
-        return $this->createDatatable(ENTITY_CLIENT, $query);
-    }
+        $query = $this->clientRepo->find($search, $userId);
 
-    protected function getDatatableColumns($entityType, $hideClient)
-    {
-        return [
-            [
-                'name',
-                function ($model) {
-                    return link_to("clients/{$model->public_id}", $model->name ?: '');
-                }
-            ],
-            [
-                'first_name',
-                function ($model) {
-                    return link_to("clients/{$model->public_id}", $model->first_name.' '.$model->last_name);
-                }
-            ],
-            [
-                'email',
-                function ($model) {
-                    return link_to("clients/{$model->public_id}", $model->email ?: '');
-                }
-            ],
-            [
-                'clients.created_at',
-                function ($model) {
-                    return Utils::timestampToDateString(strtotime($model->created_at));
-                }
-            ],
-            [
-                'last_login',
-                function ($model) {
-                    return Utils::timestampToDateString(strtotime($model->last_login));
-                }
-            ],
-            [
-                'balance',
-                function ($model) {
-                    return Utils::formatMoney($model->balance, $model->currency_id, $model->country_id);
-                }
-            ]
-        ];
-    }
-
-    protected function getDatatableActions($entityType)
-    {
-        return [
-            [
-                trans('texts.edit_client'),
-                function ($model) {
-                    return URL::to("clients/{$model->public_id}/edit");
-                }
-            ],
-            [],
-            [
-                trans('texts.new_task'),
-                function ($model) {
-                    return URL::to("tasks/create/{$model->public_id}");
-                }
-            ],
-            [
-                trans('texts.new_invoice'),
-                function ($model) {
-                    return URL::to("invoices/create/{$model->public_id}");
-                }
-            ],
-            [
-                trans('texts.new_quote'),
-                function ($model) {
-                    return URL::to("quotes/create/{$model->public_id}");
-                },
-                function ($model) {
-                    return Auth::user()->isPro();
-                }
-            ],
-            [],
-            [
-                trans('texts.enter_payment'),
-                function ($model) {
-                    return URL::to("payments/create/{$model->public_id}");
-                }
-            ],
-            [
-                trans('texts.enter_credit'),
-                function ($model) {
-                    return URL::to("credits/create/{$model->public_id}");
-                }
-            ],
-            [
-                trans('texts.enter_expense'),
-                function ($model) {
-                    return URL::to("expenses/create/0/{$model->public_id}");
-                }
-            ]
-        ];
+        return $this->datatableService->createDatatable($datatable, $query);
     }
 }

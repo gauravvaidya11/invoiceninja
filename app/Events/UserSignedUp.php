@@ -1,21 +1,20 @@
-<?php namespace App\Events;
+<?php
 
-use App\Events\Event;
+namespace App\Events;
 
 use Illuminate\Queue\SerializesModels;
 
-class UserSignedUp extends Event {
+/**
+ * Class UserSignedUp.
+ */
+class UserSignedUp extends Event
+{
+    use SerializesModels;
 
-	use SerializesModels;
-
-	/**
-	 * Create a new event instance.
-	 *
-	 * @return void
-	 */
-	public function __construct()
-	{
-		//
-	}
-
+    /**
+     * Create a new event instance.
+     */
+    public function __construct()
+    {
+    }
 }

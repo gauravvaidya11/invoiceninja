@@ -1,18 +1,21 @@
-<?php namespace app\Http\Requests;
+<?php
 
-use App\Http\Requests\Request;
-use Illuminate\Validation\Factory;
+namespace App\Http\Requests;
 
-class CreatePaymentTermRequest extends Request
+use App\Models\Invoice;
+use App\Models\PaymentTerm;
+
+class CreatePaymentTermRequest extends PaymentTermRequest
 {
     /**
      * Determine if the user is authorized to make this request.
      *
      * @return bool
      */
+
     public function authorize()
     {
-        return true;
+        return $this->user()->can('create', PaymentTerm::class) || $this->user()->can('create', Invoice::class);
     }
 
     /**
@@ -20,11 +23,16 @@ class CreatePaymentTermRequest extends Request
      *
      * @return array
      */
+
     public function rules()
     {
-        return [
-            'num_days' => 'required',
-            'name' => 'required',
+
+        $rules = [
+            'num_days' => 'required|numeric|unique:payment_terms,num_days,,id,account_id,' . $this->user()->account_id . ',deleted_at,NULL'
+                . '|unique:payment_terms,num_days,,id,account_id,0,deleted_at,NULL',
         ];
+
+
+        return $rules;
     }
 }

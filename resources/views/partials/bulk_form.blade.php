@@ -1,30 +1,28 @@
 <div style="display:none">
-    {!! Former::open($entityType . 's/bulk')->addClass('bulk-form') !!}
-    {!! Former::text('bulk_action') !!}
-    {!! Former::text('bulk_public_id') !!}
+    {!! Former::open($entityType . 's/bulk')->addClass("bulk-form bulk-{$entityType}-form") !!}
+    {!! Former::text('bulk_action')->addClass('bulk-action') !!}
+    {!! Former::text('bulk_public_id')->addClass('bulk-public-id') !!}
     {!! Former::close() !!}
 </div>
 
 <script type="text/javascript">
-    function submitBulkForm(action, id) {
+    function submitForm_{{ $entityType }}(action, id) {
         if (action == 'delete') {
-            if (!confirm('{!! trans("texts.are_you_sure") !!}')) {
+            if (!confirm({!! json_encode(trans("texts.are_you_sure")) !!})) {
                 return;
             }
         }
 
-        $('#bulk_public_id').val(id);
-        $('#bulk_action').val(action);
-        
-        $('form.bulk-form').submit();
-    }
-    function archiveEntity(id) {
-        submitBulkForm('archive', id);
-    }
-    function restoreEntity(id) {
-        submitBulkForm('restore', id);
-    }
-    function deleteEntity(id) {
-        submitBulkForm('delete', id);
+        @if (in_array($entityType, [ENTITY_ACCOUNT_GATEWAY]))
+            if (action == 'archive') {
+                if (!confirm({!! json_encode(trans("texts.are_you_sure")) !!})) {
+                    return;
+                }
+            }
+        @endif
+
+        $('.bulk-public-id').val(id);
+        $('.bulk-action').val(action);
+        $('form.bulk-{{ $entityType }}-form').submit();
     }
 </script>

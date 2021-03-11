@@ -1,10 +1,18 @@
-<?php namespace app\Listeners;
+<?php
 
-use App\Models\Task;
+namespace App\Listeners;
+
 use App\Events\InvoiceWasDeleted;
+use App\Models\Task;
 
+/**
+ * Class TaskListener.
+ */
 class TaskListener
 {
+    /**
+     * @param InvoiceWasDeleted $event
+     */
     public function deletedInvoice(InvoiceWasDeleted $event)
     {
         // Release any tasks associated with the deleted invoice

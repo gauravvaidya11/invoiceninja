@@ -1,9 +1,8 @@
-<?php namespace app\Http\Requests;
-// vendor
-use App\Http\Requests\Request;
-use Illuminate\Validation\Factory;
+<?php
 
-class UpdateVendorRequest extends Request
+namespace App\Http\Requests;
+
+class UpdateVendorRequest extends VendorRequest
 {
     /**
      * Determine if the user is authorized to make this request.
@@ -12,7 +11,7 @@ class UpdateVendorRequest extends Request
      */
     public function authorize()
     {
-        return true;
+        return $this->entity() && $this->user()->can('edit', $this->entity());
     }
 
     /**

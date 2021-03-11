@@ -3,7 +3,10 @@
 @section('head')
     @parent
 
-    @if ($vendor->hasAddress())
+    <script src="{{ asset('js/select2.min.js') }}" type="text/javascript"></script>
+    <link href="{{ asset('css/select2.css') }}" rel="stylesheet" type="text/css"/>
+
+    @if ($vendor->showMap())
         <style>
           #map {
             width: 100%;
@@ -14,41 +17,65 @@
           }
         </style>
 
-        <script src="https://maps.googleapis.com/maps/api/js"></script>
+        <script src="https://maps.googleapis.com/maps/api/js?key={{ env('GOOGLE_MAPS_API_KEY') }}"></script>
     @endif
 @stop
 
 
 @section('content')
 
-	<div class="pull-right">
-		{!! Former::open('vendors/bulk')->addClass('mainForm') !!}
-		<div style="display:none">
-			{!! Former::text('action') !!}
-			{!! Former::text('public_id')->value($vendor->public_id) !!}
-		</div>
+<div class="row">
+    <div class="col-md-7">
+        <ol class="breadcrumb">
+          <li>{{ link_to('/vendors', trans('texts.vendors')) }}</li>
+          <li class='active'>{{ $vendor->getDisplayName() }}</li> {!! $vendor->present()->statusLabel !!}
+        </ol>
+    </div>
+    <div class="col-md-5">
+        <div class="pull-right">
 
-		@if ($vendor->trashed())
-			{!! Button::primary(trans('texts.restore_vendor'))->withAttributes(['onclick' => 'onRestoreClick()']) !!}
-		@else
-		    {!! DropdownButton::normal(trans('texts.edit_vendor'))
-                ->withAttributes(['class'=>'normalDropDown'])
-                ->withContents([
-			      ['label' => trans('texts.archive_vendor'), 'url' => "javascript:onArchiveClick()"],
-			      ['label' => trans('texts.delete_vendor'), 'url' => "javascript:onDeleteClick()"],
-			    ]
-			  )->split() !!}
+          {!! Former::open('vendors/bulk')->autocomplete('off')->addClass('mainForm') !!}
+      		<div style="display:none">
+      			{!! Former::text('action') !!}
+      			{!! Former::text('public_id')->value($vendor->public_id) !!}
+      		</div>
 
-            {!! Button::primary(trans("texts.new_expense"))
-                    ->asLinkTo(URL::to("/expenses/create/{$vendor->public_id}"))
-                    ->appendIcon(Icon::create('plus-sign')) !!}
-		@endif
-	  {!! Former::close() !!}
+              @if ( ! $vendor->is_deleted)
+                  @can('edit', $vendor)
+                      {!! DropdownButton::normal(trans('texts.edit_vendor'))
+                          ->withAttributes(['class'=>'normalDropDown'])
+                          ->withContents([
+                            ($vendor->trashed() ? false : ['label' => trans('texts.archive_vendor'), 'url' => "javascript:onArchiveClick()"]),
+                            ['label' => trans('texts.delete_vendor'), 'url' => "javascript:onDeleteClick()"],
+                          ]
+                        )->split() !!}
+                  @endcan
+                  @if ( ! $vendor->trashed())
+                      @can('create', ENTITY_EXPENSE)
+                          {!! Button::primary(trans("texts.new_expense"))
+                                  ->asLinkTo(URL::to("/expenses/create/0/{$vendor->public_id}"))
+                                  ->appendIcon(Icon::create('plus-sign')) !!}
+                      @endcan
+                  @endif
+              @endif
 
-	</div>
+              @if ($vendor->trashed())
+                  @can('edit', $vendor)
+                      {!! Button::primary(trans('texts.restore_vendor'))
+                              ->appendIcon(Icon::create('cloud-download'))
+                              ->withAttributes(['onclick' => 'onRestoreClick()']) !!}
+                  @endcan
+              @endif
 
 
-	<h2>{{ $vendor->getDisplayName() }}</h2>
+      	  {!! Former::close() !!}
+
+        </div>
+    </div>
+</div>
+
+
+
     <div class="panel panel-default">
     <div class="panel-body">
 	<div class="row">
@@ -61,6 +88,14 @@
 		  	   <p><i class="fa fa-vat-number" style="width: 20px"></i>{{ trans('texts.vat_number').': '.$vendor->vat_number }}</p>
             @endif
 
+            @if ($vendor->account->customLabel('vendor1') && $vendor->custom_value1)
+                {{ $vendor->account->present()->customLabel('vendor1') . ': ' }} {!! nl2br(e($vendor->custom_value1)) !!}<br/>
+            @endif
+            @if ($vendor->account->customLabel('vendor2') && $vendor->custom_value2)
+                {{ $vendor->account->present()->customLabel('vendor2') . ': ' }} {!! nl2br(e($vendor->custom_value2)) !!}<br/>
+            @endif
+
+
             @if ($vendor->address1)
                 {{ $vendor->address1 }}<br/>
             @endif
@@ -71,7 +106,7 @@
                 {{ $vendor->getCityState() }}<br/>
             @endif
             @if ($vendor->country)
-                {{ $vendor->country->name }}<br/>
+                {{ $vendor->country->getName() }}<br/>
             @endif
 
             @if ($vendor->account->custom_vendor_label1 && $vendor->custom_value1)
@@ -86,7 +121,7 @@
             @endif
 
             @if ($vendor->private_notes)
-                <p><i>{{ $vendor->private_notes }}</i></p>
+                <p><i>{!! nl2br(e($vendor->private_notes)) !!}</i></p>
             @endif
 
   	        @if ($vendor->vendor_industry)
@@ -109,7 +144,7 @@
 
 		<div class="col-md-3">
 			<h3>{{ trans('texts.contacts') }}</h3>
-		  	@foreach ($vendor->vendorcontacts as $contact)
+		  	@foreach ($vendor->vendor_contacts as $contact)
                 @if ($contact->first_name || $contact->last_name)
                     <b>{{ $contact->first_name.' '.$contact->last_name }}</b><br/>
                 @endif
@@ -126,8 +161,12 @@
 			<h3>{{ trans('texts.standing') }}
 			<table class="table" style="width:100%">
 				<tr>
-					<td><small>{{ trans('texts.balance') }}</small></td>
-					<td style="text-align: right">{{ Utils::formatMoney($totalexpense, $vendor->getCurrencyId()) }}</td>
+					<td style="vertical-align: top"><small>{{ trans('texts.balance') }}</small></td>
+                    <td style="text-align: right">
+                        @foreach ($vendor->getUnpaidExpenses() as $currency)
+                            <p>{{ Utils::formatMoney($currency->amount, $currency->expense_currency_id) }}</p>
+                        @endforeach
+                    </td>
 				</tr>
 			</table>
 			</h3>
@@ -136,29 +175,23 @@
     </div>
     </div>
 
-    @if ($vendor->hasAddress())
+    @if ($vendor->showMap())
         <div id="map"></div>
         <br/>
     @endif
 
 	<ul class="nav nav-tabs nav-justified">
-		{!! HTML::tab_link('#expenses', trans('texts.expenses')) !!}
-	</ul>
+		{!! Form::tab_link('#expenses', trans('texts.expenses')) !!}
+	</ul><br/>
 
 	<div class="tab-content">
         <div class="tab-pane" id="expenses">
-	    	{!! Datatable::table()
-						->addColumn(
-								trans('texts.expense_date'),
-								trans('texts.amount'),
-								trans('texts.public_notes'))
-				->setUrl(url('api/expenseVendor/' . $vendor->public_id))
-                ->setCustomValues('entityType', 'expenses')
-				->setOptions('sPaginationType', 'bootstrap')
-				->setOptions('bFilter', false)
-				->setOptions('aaSorting', [['0', 'asc']])
-				->render('datatable')
-				!!}
+            @include('list', [
+                'entityType' => ENTITY_EXPENSE,
+                'datatable' => new \App\Ninja\Datatables\ExpenseDatatable(true, true),
+                'vendorId' => $vendor->public_id,
+                'url' => url('api/vendor_expenses/' . $vendor->public_id),
+            ])
         </div>
     </div>
 
@@ -167,29 +200,11 @@
     var loadedTabs = {};
 
 	$(function() {
-		$('.normalDropDown:not(.dropdown-toggle)').click(function() {
-			window.location = '{{ URL::to('vendors/' . $vendor->public_id . '/edit') }}';
-		});
-		$('.primaryDropDown:not(.dropdown-toggle)').click(function() {
-			window.location = '{{ URL::to('expenses/create/' . $vendor->public_id ) }}';
+		$('.normalDropDown:not(.dropdown-toggle)').click(function(event) {
+            openUrlOnClick('{{ URL::to('vendors/' . $vendor->public_id . '/edit') }}', event)
 		});
 
-        // load datatable data when tab is shown and remember last tab selected
-        $('a[data-toggle="tab"]').on('shown.bs.tab', function (e) {
-          var target = $(e.target).attr("href") // activated tab
-          target = target.substring(1);
-          localStorage.setItem('vendor_tab', target);
-          if (!loadedTabs.hasOwnProperty(target)) {
-            loadedTabs[target] = true;
-            window['load_' + target]();
-          }
-        });
-        var tab = localStorage.getItem('vendor_tab');
-        if (tab && tab != 'activity') {
-            $('.nav-tabs a[href="#' + tab.replace('#', '') + '"]').tab('show');
-        } else {
-            //window['load_activity']();
-        }
+        $('.nav-tabs a[href="#expenses"]').tab('show');
 	});
 
 	function onArchiveClick() {
@@ -203,13 +218,13 @@
 	}
 
 	function onDeleteClick() {
-		if (confirm("{!! trans('texts.are_you_sure') !!}")) {
+		if (confirm({!! json_encode(trans('texts.are_you_sure')) !!})) {
 			$('#action').val('delete');
 			$('.mainForm').submit();
 		}
 	}
 
-    @if ($vendor->hasAddress())
+    @if ($vendor->showMap())
         function initialize() {
             var mapCanvas = document.getElementById('map');
             var mapOptions = {
@@ -219,7 +234,7 @@
             };
 
             var map = new google.maps.Map(mapCanvas, mapOptions)
-            var address = "{{ "{$vendor->address1} {$vendor->address2} {$vendor->city} {$vendor->state} {$vendor->postal_code} " . ($vendor->country ? $vendor->country->name : '') }}";
+            var address = {!! json_encode(e("{$vendor->address1} {$vendor->address2} {$vendor->city} {$vendor->state} {$vendor->postal_code} " . ($vendor->country ? $vendor->country->getName() : ''))) !!};
 
             geocoder = new google.maps.Geocoder();
             geocoder.geocode( { 'address': address}, function(results, status) {

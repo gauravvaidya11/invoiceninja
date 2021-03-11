@@ -1,22 +1,26 @@
-<?php namespace App\Http\Controllers;
+<?php
 
-use Session;
-use Utils;
-use Response;
-use Request;
-use League\Fractal;
-use League\Fractal\Manager;
-use League\Fractal\Resource\Item;
-use League\Fractal\Resource\Collection;
-use League\Fractal\Pagination\IlluminatePaginatorAdapter;
+namespace App\Http\Controllers;
+
+use App\Models\EntityModel;
 use App\Ninja\Serializers\ArraySerializer;
+use Auth;
+use Input;
+use League\Fractal\Manager;
+use League\Fractal\Pagination\IlluminatePaginatorAdapter;
+use League\Fractal\Resource\Collection;
+use League\Fractal\Resource\Item;
 use League\Fractal\Serializer\JsonApiSerializer;
+use Request;
+use Response;
+use Utils;
 
 /**
  * @SWG\Swagger(
  *     schemes={"http","https"},
- *     host="ninja.dev",
+ *     host="ninja.test",
  *     basePath="/api/v1",
+ *     produces={"application/json"},
  *     @SWG\Info(
  *         version="1.0.0",
  *         title="Invoice Ninja API",
@@ -34,11 +38,12 @@ use League\Fractal\Serializer\JsonApiSerializer;
  *         description="Find out more about Invoice Ninja",
  *         url="https://www.invoiceninja.com"
  *     ),
+ *     security={"api_key": {}},
  *     @SWG\SecurityScheme(
  *         securityDefinition="api_key",
  *         type="apiKey",
  *         in="header",
- *         name="TOKEN"
+ *         name="X-Ninja-Token"
  *     )
  * )
  */
@@ -56,12 +61,86 @@ class BaseAPIController extends Controller
         }
 
         $this->serializer = Request::get('serializer') ?: API_SERIALIZER_ARRAY;
-        
+
         if ($this->serializer === API_SERIALIZER_JSON) {
             $this->manager->setSerializer(new JsonApiSerializer());
         } else {
             $this->manager->setSerializer(new ArraySerializer());
         }
+    }
+
+    protected function handleAction($request)
+    {
+        $entity = $request->entity();
+        $action = $request->action;
+
+        if (! in_array($action, ['archive', 'delete', 'restore', 'mark_sent', 'markSent', 'emailInvoice', 'markPaid'])) {
+            return $this->errorResponse("Action [$action] is not supported");
+        }
+
+        if ($action == 'mark_sent') {
+            $action = 'markSent';
+        }
+
+        $repo = Utils::toCamelCase($this->entityType) . 'Repo';
+
+        $this->$repo->$action($entity);
+
+        return $this->itemResponse($entity);
+    }
+
+    protected function listResponse($query)
+    {
+        $transformerClass = EntityModel::getTransformerName($this->entityType);
+        $transformer = new $transformerClass(Auth::user()->account, Input::get('serializer'));
+
+        $includes = $transformer->getDefaultIncludes();
+        $includes = $this->getRequestIncludes($includes);
+
+        $query->with($includes);
+
+        if (Input::get('filter_active')) {
+            $query->whereNull('deleted_at');
+        }
+
+        if (Input::get('updated_at') > 0) {
+                $updatedAt = intval(Input::get('updated_at'));
+                $query->where('updated_at', '>=', date('Y-m-d H:i:s', $updatedAt));
+        }
+
+        if (Input::get('client_id') > 0) {
+                $clientPublicId = Input::get('client_id');
+                $filter = function ($query) use ($clientPublicId) {
+                $query->where('public_id', '=', $clientPublicId);
+             };
+             $query->whereHas('client', $filter);
+        }
+
+        if (! Utils::hasPermission('view_'.$this->entityType)) {
+            if ($this->entityType == ENTITY_USER) {
+                $query->where('id', '=', Auth::user()->id);
+            } else {
+                $query->where('user_id', '=', Auth::user()->id);
+            }
+        }
+
+        $data = $this->createCollection($query, $transformer, $this->entityType);
+
+        return $this->response($data);
+    }
+
+    protected function itemResponse($item)
+    {
+        if (! $item) {
+            return $this->errorResponse('Record not found', 404);
+        }
+
+        $transformerClass = EntityModel::getTransformerName($this->entityType);
+        $transformer = new $transformerClass(Auth::user()->account, Input::get('serializer'));
+
+        $data = $this->createItem($item, $transformer, $this->entityType);
+
+        return $this->response($data);
     }
 
     protected function createItem($data, $transformer, $entityType)
@@ -71,19 +150,27 @@ class BaseAPIController extends Controller
         }
 
         $resource = new Item($data, $transformer, $entityType);
+
         return $this->manager->createData($resource)->toArray();
     }
 
-    protected function createCollection($data, $transformer, $entityType, $paginator = false)
+    protected function createCollection($query, $transformer, $entityType)
     {
         if ($this->serializer && $this->serializer != API_SERIALIZER_JSON) {
             $entityType = null;
         }
 
-        $resource = new Collection($data, $transformer, $entityType);
-
-        if ($paginator) {
+        if (is_a($query, "Illuminate\Database\Eloquent\Builder")) {
+            $limit = Input::get('per_page', DEFAULT_API_PAGE_SIZE);
+            if (Utils::isNinja()) {
+                $limit = min(MAX_API_PAGE_SIZE, $limit);
+            }
+            $paginator = $query->paginate($limit);
+            $query = $paginator->getCollection();
+            $resource = new Collection($query, $transformer, $entityType);
             $resource->setPaginator(new IlluminatePaginatorAdapter($paginator));
+        } else {
+            $resource = new Collection($query, $transformer, $entityType);
         }
 
         return $this->manager->createData($resource)->toArray();
@@ -98,7 +185,7 @@ class BaseAPIController extends Controller
         } else {
             $meta = isset($response['meta']) ? $response['meta'] : null;
             $response = [
-                $index => $response
+                $index => $response,
             ];
 
             if ($meta) {
@@ -113,40 +200,51 @@ class BaseAPIController extends Controller
         return Response::make($response, 200, $headers);
     }
 
-    protected  function errorResponse($response, $httpErrorCode = 400)
+    protected function errorResponse($response, $httpErrorCode = 400)
     {
         $error['error'] = $response;
         $error = json_encode($error, JSON_PRETTY_PRINT);
         $headers = Utils::getApiHeaders();
 
         return Response::make($error, $httpErrorCode, $headers);
-
     }
 
-
-    protected function getIncluded()
+    protected function getRequestIncludes($data)
     {
-        $data = ['user'];
-
         $included = Request::get('include');
         $included = explode(',', $included);
 
         foreach ($included as $include) {
             if ($include == 'invoices') {
                 $data[] = 'invoices.invoice_items';
-                $data[] = 'invoices.user';
+                $data[] = 'invoices.client.contacts';
+            } elseif ($include == 'invoice') {
+                $data[] = 'invoice.invoice_items';
+                $data[] = 'invoice.client.contacts';
+            } elseif ($include == 'client') {
+                $data[] = 'client.contacts';
             } elseif ($include == 'clients') {
                 $data[] = 'clients.contacts';
-                $data[] = 'clients.user';
             } elseif ($include == 'vendors') {
-                $data[] = 'vendors.vendorcontacts';
-                $data[] = 'vendors.user';
-            }
-            elseif ($include) {
+                $data[] = 'vendors.vendor_contacts';
+            } elseif ($include == 'documents' && $this->entityType == ENTITY_INVOICE) {
+                $data[] = 'documents.expense';
+            } elseif ($include) {
                 $data[] = $include;
             }
         }
-        
+
+        return $data;
+    }
+
+    protected function fileReponse($name, $data)
+    {
+        header('Content-Type: application/pdf');
+        header('Content-Length: ' . strlen($data));
+        header('Content-disposition: attachment; filename="' . $name . '"');
+        header('Cache-Control: public, must-revalidate, max-age=0');
+        header('Last-Modified: ' . gmdate('D, d M Y H:i:s') . ' GMT');
+
         return $data;
     }
 }

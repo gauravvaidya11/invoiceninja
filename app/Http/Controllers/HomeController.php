@@ -1,32 +1,49 @@
-<?php namespace App\Http\Controllers;
+<?php
 
-use Response;
-use Redirect;
-use Auth;
-use View;
-use Input;
-use Session;
-use App\Models\Account;
+namespace App\Http\Controllers;
+
 use App\Libraries\Utils;
+use App\Models\Account;
 use App\Ninja\Mailers\Mailer;
-use Symfony\Component\Security\Core\Util\StringUtils;
+use Auth;
+use Input;
+use Mail;
+use Redirect;
+use Request;
+use Response;
+use Session;
+use View;
 
+/**
+ * Class HomeController.
+ */
 class HomeController extends BaseController
 {
+    /**
+     * @var Mailer
+     */
     protected $mailer;
 
+    /**
+     * HomeController constructor.
+     *
+     * @param Mailer $mailer
+     */
     public function __construct(Mailer $mailer)
     {
-        parent::__construct();
+        //parent::__construct();
 
         $this->mailer = $mailer;
     }
 
+    /**
+     * @return \Illuminate\Http\RedirectResponse
+     */
     public function showIndex()
     {
         Session::reflash();
-        
-        if (!Utils::isNinja() && (!Utils::isDatabaseSetup() || Account::count() == 0)) {
+
+        if (! Utils::isNinja() && (! Utils::isDatabaseSetup() || Account::count() == 0)) {
             return Redirect::to('/setup');
         } elseif (Auth::check()) {
             return Redirect::to('/dashboard');
@@ -35,39 +52,38 @@ class HomeController extends BaseController
         }
     }
 
-    public function showTerms()
-    {
-        return View::make('public.terms', ['hideHeader' => true]);
-    }
-
+    /**
+     * @return \Illuminate\Contracts\View\View
+     */
     public function viewLogo()
     {
         return View::make('public.logo');
     }
-    
+
+    /**
+     * @return \Illuminate\Contracts\View\View|\Illuminate\Http\RedirectResponse
+     */
     public function invoiceNow()
     {
-        if (Auth::check() && Input::get('new_company')) {
-            Session::put(PREV_USER_ID, Auth::user()->id);
-            Auth::user()->clearSession();
-            Auth::logout();
-        }
-
         // Track the referral/campaign code
-        foreach (['rc', 'utm_campaign'] as $code) {
-            if (Input::has($code)) {
-                Session::set(SESSION_REFERRAL_CODE, Input::get($code));
-            }
+        if (Input::has('rc')) {
+            session([SESSION_REFERRAL_CODE => Input::get('rc')]);
         }
 
         if (Auth::check()) {
-            $redirectTo = Input::get('redirect_to', 'invoices/create');
+            $redirectTo = Input::get('redirect_to') ? SITE_URL . '/' . ltrim(Input::get('redirect_to'), '/') : 'invoices/create';
             return Redirect::to($redirectTo)->with('sign_up', Input::get('sign_up'));
         } else {
             return View::make('public.invoice_now');
         }
     }
 
+    /**
+     * @param $userType
+     * @param $version
+     *
+     * @return \Illuminate\Http\JsonResponse
+     */
     public function newsFeed($userType, $version)
     {
         $response = Utils::getNewsFeedResponse($userType);
@@ -75,6 +91,9 @@ class HomeController extends BaseController
         return Response::json($response);
     }
 
+    /**
+     * @return string
+     */
     public function hideMessage()
     {
         if (Auth::check() && Session::has('news_feed_id')) {
@@ -85,19 +104,62 @@ class HomeController extends BaseController
                 $user->save();
             }
         }
-        
+
         Session::forget('news_feed_message');
 
         return 'success';
     }
 
+    /**
+     * @return string
+     */
     public function logError()
     {
         return Utils::logError(Input::get('error'), 'JavaScript');
     }
 
+    /**
+     * @return mixed
+     */
     public function keepAlive()
     {
+        return RESULT_SUCCESS;
+    }
+
+    /**
+     * @return mixed
+     */
+    public function loggedIn()
+    {
+        return RESULT_SUCCESS;
+    }
+
+    /**
+     * @return mixed
+     */
+    public function contactUs()
+    {
+        $message = request()->contact_us_message;
+
+        if (request()->include_errors) {
+            $message .= "\n\n" . join("\n", Utils::getErrors());
+        }
+
+        Mail::raw($message, function ($message) {
+            $subject = 'Customer Message [';
+            if (Utils::isNinjaProd()) {
+                $subject .= str_replace('db-ninja-', '', config('database.default'));
+                $subject .= Auth::user()->present()->statusCode . '] ';
+            } else {
+                $subject .= 'Self-Host] | ';
+            }
+            $subject .= date('M jS, g:ia');
+            $message->to(env('CONTACT_EMAIL', 'contact@invoiceninja.com'))
+                    ->from(CONTACT_EMAIL, Auth::user()->present()->fullName)
+                    ->replyTo(Auth::user()->email, Auth::user()->present()->fullName)
+                    ->subject($subject);
+        });
+
         return RESULT_SUCCESS;
     }
 }

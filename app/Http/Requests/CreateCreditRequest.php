@@ -1,9 +1,10 @@
-<?php namespace app\Http\Requests;
+<?php
 
-use App\Http\Requests\Request;
-use Illuminate\Validation\Factory;
+namespace App\Http\Requests;
 
-class CreateCreditRequest extends Request
+use App\Models\Credit;
+
+class CreateCreditRequest extends CreditRequest
 {
     /**
      * Determine if the user is authorized to make this request.
@@ -12,7 +13,7 @@ class CreateCreditRequest extends Request
      */
     public function authorize()
     {
-        return true;
+        return $this->user()->can('create', Credit::class);
     }
 
     /**
@@ -23,7 +24,7 @@ class CreateCreditRequest extends Request
     public function rules()
     {
         return [
-            'client' => 'required',
+            'client_id' => 'required',
             'amount' => 'required|positive',
         ];
     }

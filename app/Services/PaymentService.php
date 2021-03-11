@@ -1,345 +1,229 @@
-<?php namespace App\Services;
+<?php
 
-use Utils;
-use URL;
-use DateTime;
-use Event;
-use Omnipay;
-use Session;
-use CreditCard;
-use App\Models\Payment;
+namespace App\Services;
+
 use App\Models\Account;
-use App\Models\Country;
-use App\Models\AccountGatewayToken;
-use App\Ninja\Repositories\PaymentRepository;
+use App\Models\Activity;
+use App\Models\Client;
+use App\Models\Credit;
+use App\Models\Invoice;
+use App\Ninja\Datatables\PaymentDatatable;
 use App\Ninja\Repositories\AccountRepository;
-use App\Services\BaseService;
-use App\Events\PaymentWasCreated;
+use App\Ninja\Repositories\PaymentRepository;
+use Auth;
+use App;
+use Exception;
+use Utils;
 
 class PaymentService extends BaseService
 {
-    public $lastError;
-    protected $datatableService;
-
-    public function __construct(PaymentRepository $paymentRepo, AccountRepository $accountRepo, DatatableService $datatableService)
-    {
+    /**
+     * PaymentService constructor.
+     *
+     * @param PaymentRepository $paymentRepo
+     * @param AccountRepository $accountRepo
+     * @param DatatableService  $datatableService
+     */
+    public function __construct(
+        PaymentRepository $paymentRepo,
+        AccountRepository $accountRepo,
+        DatatableService $datatableService
+    ) {
         $this->datatableService = $datatableService;
         $this->paymentRepo = $paymentRepo;
         $this->accountRepo = $accountRepo;
     }
 
+    /**
+     * @return PaymentRepository
+     */
     protected function getRepo()
     {
         return $this->paymentRepo;
     }
 
-    public function createGateway($accountGateway)
+    /**
+     * @param Invoice $invoice
+     *
+     * @return bool
+     */
+    public function autoBillInvoice(Invoice $invoice)
     {
-        $gateway = Omnipay::create($accountGateway->gateway->provider);
-        $config = $accountGateway->getConfig();
-
-        foreach ($config as $key => $val) {
-            if (!$val) {
-                continue;
-            }
-
-            $function = "set".ucfirst($key);
-            if (method_exists($gateway, $function)) {
-                $gateway->$function($val);
-            }
-        }
-
-        if ($accountGateway->isGateway(GATEWAY_DWOLLA)) {
-            if ($gateway->getSandbox() && isset($_ENV['DWOLLA_SANDBOX_KEY']) && isset($_ENV['DWOLLA_SANSBOX_SECRET'])) {
-                $gateway->setKey($_ENV['DWOLLA_SANDBOX_KEY']);
-                $gateway->setSecret($_ENV['DWOLLA_SANSBOX_SECRET']);
-            } elseif (isset($_ENV['DWOLLA_KEY']) && isset($_ENV['DWOLLA_SECRET'])) {
-                $gateway->setKey($_ENV['DWOLLA_KEY']);
-                $gateway->setSecret($_ENV['DWOLLA_SECRET']);
-            }
-        }
-
-        return $gateway;
-    }
-
-    public function getPaymentDetails($invitation, $accountGateway, $input = null)
-    {
-        $invoice = $invitation->invoice;
-        $account = $invoice->account;
-        $key = $invoice->account_id.'-'.$invoice->invoice_number;
-        $currencyCode = $invoice->client->currency ? $invoice->client->currency->code : ($invoice->account->currency ? $invoice->account->currency->code : 'USD');
-
-        if ($input) {
-            $data = self::convertInputForOmnipay($input);
-            Session::put($key, $data);
-        } elseif (Session::get($key)) {
-            $data = Session::get($key);
-        } else {
-            $data = $this->createDataForClient($invitation);
-        }
-
-        $card = new CreditCard($data);
-        $data = [
-            'amount' => $invoice->getRequestedAmount(),
-            'card' => $card,
-            'currency' => $currencyCode,
-            'returnUrl' => URL::to('complete'),
-            'cancelUrl' => $invitation->getLink(),
-            'description' => trans('texts.' . $invoice->getEntityType()) . " {$invoice->invoice_number}",
-            'transactionId' => $invoice->invoice_number,
-            'transactionType' => 'Purchase',
-        ];
-
-        if ($accountGateway->isGateway(GATEWAY_PAYPAL_EXPRESS) || $accountGateway->isGateway(GATEWAY_PAYPAL_PRO)) {
-            $data['ButtonSource'] = 'InvoiceNinja_SP';
-        };
-
-        return $data;
-    }
-
-    public function convertInputForOmnipay($input)
-    {
-        $data = [
-            'firstName' => $input['first_name'],
-            'lastName' => $input['last_name'],
-            'number' => isset($input['card_number']) ? $input['card_number'] : null,
-            'expiryMonth' => isset($input['expiration_month']) ? $input['expiration_month'] : null,
-            'expiryYear' => isset($input['expiration_year']) ? $input['expiration_year'] : null,
-            'cvv' => isset($input['cvv']) ? $input['cvv'] : '',
-        ];
-
-        if (isset($input['country_id'])) {
-            $country = Country::find($input['country_id']);
-
-            $data = array_merge($data, [
-                'billingAddress1' => $input['address1'],
-                'billingAddress2' => $input['address2'],
-                'billingCity' => $input['city'],
-                'billingState' => $input['state'],
-                'billingPostcode' => $input['postal_code'],
-                'billingCountry' => $country->iso_3166_2,
-                'shippingAddress1' => $input['address1'],
-                'shippingAddress2' => $input['address2'],
-                'shippingCity' => $input['city'],
-                'shippingState' => $input['state'],
-                'shippingPostcode' => $input['postal_code'],
-                'shippingCountry' => $country->iso_3166_2
-            ]);
-        }
-
-        return $data;
-    }
-
-    public function createDataForClient($invitation)
-    {
-        $invoice = $invitation->invoice;
-        $client = $invoice->client;
-        $contact = $invitation->contact ?: $client->contacts()->first();
-
-        return [
-            'email' => $contact->email,
-            'company' => $client->getDisplayName(),
-            'firstName' => $contact->first_name,
-            'lastName' => $contact->last_name,
-            'billingAddress1' => $client->address1,
-            'billingAddress2' => $client->address2,
-            'billingCity' => $client->city,
-            'billingPostcode' => $client->postal_code,
-            'billingState' => $client->state,
-            'billingCountry' => $client->country ? $client->country->iso_3166_2 : '',
-            'billingPhone' => $contact->phone,
-            'shippingAddress1' => $client->address1,
-            'shippingAddress2' => $client->address2,
-            'shippingCity' => $client->city,
-            'shippingPostcode' => $client->postal_code,
-            'shippingState' => $client->state,
-            'shippingCountry' => $client->country ? $client->country->iso_3166_2 : '',
-            'shippingPhone' => $contact->phone,
-        ];
-    }
-
-    public function createToken($gateway, $details, $accountGateway, $client, $contactId)
-    {
-        $tokenResponse = $gateway->createCard($details)->send();
-        $cardReference = $tokenResponse->getCustomerReference();
-
-        if ($cardReference) {
-            $token = AccountGatewayToken::where('client_id', '=', $client->id)
-            ->where('account_gateway_id', '=', $accountGateway->id)->first();
-
-            if (!$token) {
-                $token = new AccountGatewayToken();
-                $token->account_id = $client->account->id;
-                $token->contact_id = $contactId;
-                $token->account_gateway_id = $accountGateway->id;
-                $token->client_id = $client->id;
-            }
-
-            $token->token = $cardReference;
-            $token->save();
-        } else {
-            $this->lastError = $tokenResponse->getMessage();
-        }
-
-        return $cardReference;
-    }
-
-    public function getCheckoutComToken($invitation)
-    {
-        $token = false;
-        $invoice = $invitation->invoice;
-        $client = $invoice->client;
-        $account = $invoice->account;
-
-        $accountGateway = $account->getGatewayConfig(GATEWAY_CHECKOUT_COM);
-        $gateway = $this->createGateway($accountGateway);
-
-        $response = $gateway->purchase([
-            'amount' => $invoice->getRequestedAmount(),
-            'currency' => $client->currency ? $client->currency->code : ($account->currency ? $account->currency->code : 'USD')
-        ])->send();
-
-        if ($response->isRedirect()) {
-            $token = $response->getTransactionReference();
-        }
-        
-        Session::set($invitation->id . 'payment_type', PAYMENT_TYPE_CREDIT_CARD);
-
-        return $token;
-    }
-
-    public function createPayment($invitation, $accountGateway, $ref, $payerId = null)
-    {
-        $invoice = $invitation->invoice;
-
-        // enable pro plan for hosted users
-        if ($invoice->account->account_key == NINJA_ACCOUNT_KEY && $invoice->amount == PRO_PLAN_PRICE) {
-            $account = Account::with('users')->find($invoice->client->public_id);
-            $account->pro_plan_paid = $account->getRenewalDate();
-            $account->save();
-
-            // sync pro accounts
-            $user = $account->users()->first();
-            $this->accountRepo->syncAccounts($user->id, $account->pro_plan_paid);
-        }
-
-        $payment = Payment::createNew($invitation);
-        $payment->invitation_id = $invitation->id;
-        $payment->account_gateway_id = $accountGateway->id;
-        $payment->invoice_id = $invoice->id;
-        $payment->amount = $invoice->getRequestedAmount();
-        $payment->client_id = $invoice->client_id;
-        $payment->contact_id = $invitation->contact_id;
-        $payment->transaction_reference = $ref;
-        $payment->payment_date = date_create()->format('Y-m-d');
-
-        if ($payerId) {
-            $payment->payer_id = $payerId;
-        }
-
-        $payment->save();
-
-        return $payment;
-    }
-
-    public function completePurchase($gateway, $accountGateway, $details, $token)
-    {
-        if ($accountGateway->isGateway(GATEWAY_MOLLIE)) {
-            $details['transactionReference'] = $token;
-            $response = $gateway->fetchTransaction($details)->send();
-            return $gateway->fetchTransaction($details)->send();
-        } else {
-
-            return $gateway->completePurchase($details)->send();
-        }
-    }
-
-    public function autoBillInvoice($invoice)
-    {
-        $client = $invoice->client;
-        $account = $invoice->account;
-        $invitation = $invoice->invitations->first();
-        $accountGateway = $account->getGatewayConfig(GATEWAY_STRIPE);
-        $token = $client->getGatewayToken();
-
-        if (!$invitation || !$accountGateway || !$token) {
+        if (! $invoice->canBePaid()) {
             return false;
         }
 
-        // setup the gateway/payment info
-        $gateway = $this->createGateway($accountGateway);
-        $details = $this->getPaymentDetails($invitation, $accountGateway);
-        $details['customerReference'] = $token;
+        /** @var \App\Models\Client $client */
+        $client = $invoice->client;
 
-        // submit purchase/get response
-        $response = $gateway->purchase($details)->send();
-        $ref = $response->getTransactionReference();
+        /** @var \App\Models\Account $account */
+        $account = $client->account;
 
-        // create payment record
-        return $this->createPayment($invitation, $accountGateway, $ref);
+        /** @var \App\Models\Invitation $invitation */
+        $invitation = $invoice->invitations->first();
+
+        if (! $invitation) {
+            return false;
+        }
+
+        $invoice->markSentIfUnsent();
+
+        if ($credits = $client->credits->sum('balance')) {
+            $balance = $invoice->balance;
+            $amount = min($credits, $balance);
+            $data = [
+                'payment_type_id' => PAYMENT_TYPE_CREDIT,
+                'invoice_id' => $invoice->id,
+                'client_id' => $client->id,
+                'amount' => $amount,
+            ];
+            $payment = $this->paymentRepo->save($data);
+            if ($amount == $balance) {
+                return $payment;
+            }
+        }
+
+        $paymentDriver = $account->paymentDriver($invitation, GATEWAY_TYPE_TOKEN);
+
+        if (! $paymentDriver) {
+            return false;
+        }
+
+        $customer = $paymentDriver->customer();
+
+        if (! $customer) {
+            return false;
+        }
+
+        $paymentMethod = $customer->default_payment_method;
+
+        if (! $paymentMethod) {
+            return false;
+        }
+
+        if ($paymentMethod->requiresDelayedAutoBill()) {
+            $invoiceDate = \DateTime::createFromFormat('Y-m-d', $invoice->invoice_date);
+            $minDueDate = clone $invoiceDate;
+            $minDueDate->modify('+10 days');
+
+            if (date_create() < $minDueDate) {
+                // Can't auto bill now
+                return false;
+            }
+
+            if ($invoice->partial > 0) {
+                // The amount would be different than the amount in the email
+                return false;
+            }
+
+            $firstUpdate = Activity::where('invoice_id', '=', $invoice->id)
+                ->where('activity_type_id', '=', ACTIVITY_TYPE_UPDATE_INVOICE)
+                ->first();
+
+            if ($firstUpdate) {
+                $backup = json_decode($firstUpdate->json_backup);
+
+                if ($backup->balance != $invoice->balance || $backup->due_date != $invoice->due_date) {
+                    // It's changed since we sent the email can't bill now
+                    return false;
+                }
+            }
+
+            if ($invoice->payments->count()) {
+                // ACH requirements are strict; don't auto bill this
+                return false;
+            }
+        }
+
+        try {
+            return $paymentDriver->completeOnsitePurchase(false, $paymentMethod, true);
+        } catch (Exception $exception) {
+            $subject = trans('texts.auto_bill_failed', ['invoice_number' => $invoice->invoice_number]);
+            $message = sprintf('%s: %s', ucwords($paymentDriver->providerName()), $exception->getMessage());
+            //$message .= $exception->getTraceAsString();
+            Utils::logError($message, 'PHP', true);
+            if (App::runningInConsole()) {
+                $mailer = app('App\Ninja\Mailers\UserMailer');
+                $mailer->sendMessage($invoice->user, $subject, $message, [
+                    'invoice' => $invoice
+                ]);
+            }
+
+            return false;
+        }
     }
+
+    public function save($input, $payment = null, $invoice = null)
+    {
+        // if the payment amount is more than the balance create a credit
+        if ($invoice && Utils::parseFloat($input['amount']) > $invoice->balance) {
+            $credit = Credit::createNew();
+            $credit->client_id = $invoice->client_id;
+            $credit->credit_date = date_create()->format('Y-m-d');
+            $credit->amount = $credit->balance = $input['amount'] - $invoice->balance;
+            $credit->private_notes = trans('texts.credit_created_by', ['transaction_reference' => isset($input['transaction_reference']) ? $input['transaction_reference'] : '']);
+            $credit->save();
+            $input['amount'] = $invoice->balance;
+        }
+
+        return $this->paymentRepo->save($input, $payment);
+    }
+
 
     public function getDatatable($clientPublicId, $search)
     {
+        $datatable = new PaymentDatatable(true, $clientPublicId);
         $query = $this->paymentRepo->find($clientPublicId, $search);
 
-        return $this->createDatatable(ENTITY_PAYMENT, $query, !$clientPublicId);
+        if (! Utils::hasPermission('view_payment')) {
+            $query->where('payments.user_id', '=', Auth::user()->id);
+        }
+
+        return $this->datatableService->createDatatable($datatable, $query);
     }
 
-    protected function getDatatableColumns($entityType, $hideClient)
+    public function bulk($ids, $action, $params = [])
     {
-        return [
-            [
-                'invoice_number',
-                function ($model) {
-                    return link_to("invoices/{$model->invoice_public_id}/edit", $model->invoice_number, ['class' => Utils::getEntityRowClass($model)]);
+        if ($action == 'refund') {
+            if (! $ids) {
+                return 0;
+            }
+
+            $payments = $this->getRepo()->findByPublicIdsWithTrashed($ids);
+            $successful = 0;
+
+            foreach ($payments as $payment) {
+                if (Auth::user()->can('edit', $payment) && !$payment->is_deleted) {
+                    $amount = ! empty($params['refund_amount']) ? floatval($params['refund_amount']) : null;
+                    $sendEmail = ! empty($params['refund_email']) ? boolval($params['refund_email']) : false;
+                    $paymentDriver = false;
+                    $refunded = false;
+
+                    if ($accountGateway = $payment->account_gateway) {
+                        $paymentDriver = $accountGateway->paymentDriver();
+                    }
+
+                    if ($paymentDriver && $paymentDriver->canRefundPayments) {
+                        if ($paymentDriver->refundPayment($payment, $amount)) {
+                            $successful++;
+                            $refunded = true;
+                        }
+                    } else {
+                        $payment->recordRefund($amount);
+                        $successful++;
+                        $refunded = true;
+                    }
+
+                    if ($refunded && $sendEmail) {
+                        $mailer = app('App\Ninja\Mailers\ContactMailer');
+                        $mailer->sendPaymentConfirmation($payment, $amount);
+                    }
                 }
-            ],
-            [
-                'client_name',
-                function ($model) {
-                    return $model->client_public_id ? link_to("clients/{$model->client_public_id}", Utils::getClientDisplayName($model)) : '';
-                },
-                ! $hideClient
-            ],
-            [
-                'transaction_reference',
-                function ($model) {
-                    return $model->transaction_reference ? $model->transaction_reference : '<i>Manual entry</i>';
-                }
-            ],
-            [
-                'payment_type',
-                function ($model) {
-                    return $model->payment_type ? $model->payment_type : ($model->account_gateway_id ? $model->gateway_name : '');
-                }
-            ],
-            [
-                'amount',
-                function ($model) {
-                    return Utils::formatMoney($model->amount, $model->currency_id, $model->country_id);
-                }
-            ],
-            [
-                'payment_date',
-                function ($model) {
-                    return Utils::dateToString($model->payment_date);
-                }
-            ]
-        ];
+            }
+
+            return $successful;
+        } else {
+            return parent::bulk($ids, $action);
+        }
     }
-
-    protected function getDatatableActions($entityType)
-    {
-        return [
-            [
-                trans('texts.edit_payment'),
-                function ($model) {
-                    return URL::to("payments/{$model->public_id}/edit");
-                }
-            ]
-        ];
-    }
-
-
 }

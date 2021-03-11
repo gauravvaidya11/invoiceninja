@@ -1,7 +1,6 @@
 <?php
 
 use Codeception\Util\Fixtures;
-use \AcceptanceTester;
 use Faker\Factory;
 
 class CheckBalanceCest
@@ -18,7 +17,7 @@ class CheckBalanceCest
     public function checkBalance(AcceptanceTester $I)
     {
         $I->wantTo('ensure the balance is correct');
-        
+
         $clientEmail = $this->faker->safeEmail;
         $productKey = $this->faker->text(10);
         $productPrice = $this->faker->numberBetween(1, 20);
@@ -31,7 +30,7 @@ class CheckBalanceCest
         $I->see($clientEmail);
 
         $clientId = $I->grabFromCurrentUrl('~clients/(\d+)~');
-        
+
         // create product
         $I->amOnPage('/products/create');
         $I->fillField(['name' => 'product_key'], $productKey);
@@ -39,23 +38,24 @@ class CheckBalanceCest
         $I->fillField(['name' => 'cost'], $productPrice);
         $I->click('Save');
         $I->wait(1);
-        $I->see($productKey);
-        
+        //$I->see($productKey);
+
         // create invoice
         $I->amOnPage('/invoices/create');
         $I->selectDropdown($I, $clientEmail, '.client_select .dropdown-toggle');
-        $I->fillField('table.invoice-table tbody tr:nth-child(1) #product_key', $productKey);
-        $I->click('Save');
-        $I->wait(1);
+        $I->fillField('table.invoice-table tbody tr:nth-child(1) td:nth-child(2) input.tt-input', $productKey);
+        $I->click('table.invoice-table tbody tr:nth-child(1) .tt-selectable');
+        $I->click('Mark Sent');
+        $I->wait(5);
         $I->see($clientEmail);
         $invoiceId = $I->grabFromCurrentUrl('~invoices/(\d+)~');
         $I->amOnPage("/clients/{$clientId}");
         $I->see('Balance $' . $productPrice);
-        
+
         // update the invoice
         $I->amOnPage('/invoices/' . $invoiceId);
         $I->fillField(['name' => 'invoice_items[0][qty]'], 2);
-        $I->click('Save');
+        $I->click('Save Invoice');
         $I->wait(1);
         $I->amOnPage("/clients/{$clientId}");
         $I->see('Balance $' . ($productPrice * 2));
@@ -77,6 +77,8 @@ class CheckBalanceCest
 
         // delete the invoice
         $I->amOnPage('/invoices/' . $invoiceId);
+        $I->executeJS('submitBulkAction("restore")');
+        $I->wait(2);
         $I->executeJS('submitBulkAction("delete")');
         $I->wait(1);
         $I->amOnPage("/clients/{$clientId}");

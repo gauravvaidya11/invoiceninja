@@ -1,24 +1,22 @@
-<?php namespace App\Http\Controllers;
+<?php
 
-use Cache;
-use Auth;
-use Datatable;
-use DB;
-use Input;
-use Redirect;
-use Session;
-use View;
-use Validator;
-use stdClass;
-use Crypt;
-use URL;
-use Utils;
-use App\Models\Gateway;
+namespace App\Http\Controllers;
+
+use App\Http\Requests\CreateBankAccountRequest;
 use App\Models\Account;
 use App\Models\BankAccount;
 use App\Ninja\Repositories\BankAccountRepository;
 use App\Services\BankAccountService;
-use App\Http\Requests\CreateBankAccountRequest;
+use Auth;
+use Cache;
+use Crypt;
+use File;
+use Illuminate\Http\Request;
+use Input;
+use Redirect;
+use Session;
+use Utils;
+use View;
 
 class BankAccountController extends BaseController
 {
@@ -27,7 +25,7 @@ class BankAccountController extends BaseController
 
     public function __construct(BankAccountService $bankAccountService, BankAccountRepository $bankAccountRepo)
     {
-        parent::__construct();
+        //parent::__construct();
 
         $this->bankAccountService = $bankAccountService;
         $this->bankAccountRepo = $bankAccountRepo;
@@ -62,8 +60,7 @@ class BankAccountController extends BaseController
     }
 
     /**
-     * Displays the form for account creation
-     *
+     * Displays the form for account creation.
      */
     public function create()
     {
@@ -91,19 +88,29 @@ class BankAccountController extends BaseController
         $publicId = Input::get('public_id');
         $username = trim(Input::get('bank_username'));
         $password = trim(Input::get('bank_password'));
-        
+
         if ($publicId) {
             $bankAccount = BankAccount::scope($publicId)->firstOrFail();
             if ($username != $bankAccount->username) {
-                // TODO update username
+                $bankAccount->setUsername($username);
+                $bankAccount->save();
+            } else {
+                $username = Crypt::decrypt($username);
             }
-            $username = Crypt::decrypt($username);
             $bankId = $bankAccount->bank_id;
         } else {
-            $bankId = Input::get('bank_id');
+            $bankAccount = new BankAccount;
+            $bankAccount->bank_id = Input::get('bank_id');
         }
 
-        return json_encode($this->bankAccountService->loadBankAccounts($bankId, $username, $password, $publicId));
+        $bankAccount->app_version = Input::get('app_version');
+        $bankAccount->ofx_version = Input::get('ofx_version');
+
+        if ($publicId) {
+            $bankAccount->save();
+        }
+
+        return json_encode($this->bankAccountService->loadBankAccounts($bankAccount, $username, $password, $publicId));
     }
 
     public function store(CreateBankAccountRequest $request)
@@ -114,7 +121,7 @@ class BankAccountController extends BaseController
         $username = trim(Input::get('bank_username'));
         $password = trim(Input::get('bank_password'));
 
-        return json_encode($this->bankAccountService->loadBankAccounts($bankId, $username, $password, true));
+        return json_encode($this->bankAccountService->loadBankAccounts($bankAccount, $username, $password, true));
     }
 
     public function importExpenses($bankId)
@@ -122,4 +129,30 @@ class BankAccountController extends BaseController
         return $this->bankAccountService->importExpenses($bankId, Input::all());
     }
 
+    public function showImportOFX()
+    {
+        return view('accounts.import_ofx');
+    }
+
+    public function doImportOFX(Request $request)
+    {
+        $file = File::get($request->file('ofx_file'));
+
+        try {
+            $data = $this->bankAccountService->parseOFX($file);
+        } catch (\Exception $e) {
+            Session::now('error', trans('texts.ofx_parse_failed'));
+            Utils::logError($e);
+
+            return view('accounts.import_ofx');
+        }
+
+        $data = [
+            'banks' => null,
+            'bankAccount' => null,
+            'transactions' => json_encode([$data]),
+        ];
+
+        return View::make('accounts.bank_account', $data);
+    }
 }

@@ -1,23 +1,29 @@
-<?php namespace App\Events;
+<?php
 
-use App\Events\Event;
+namespace App\Events;
 
+use App\Models\Credit;
 use Illuminate\Queue\SerializesModels;
 
-class CreditWasDeleted extends Event {
+/**
+ * Class CreditWasDeleted.
+ */
+class CreditWasDeleted extends Event
+{
+    use SerializesModels;
 
-	use SerializesModels;
-
+    /**
+     * @var Credit
+     */
     public $credit;
-    
-	/**
-	 * Create a new event instance.
-	 *
-	 * @return void
-	 */
-    public function __construct($credit)
+
+    /**
+     * Create a new event instance.
+     *
+     * @param Credit $credit
+     */
+    public function __construct(Credit $credit)
     {
         $this->credit = $credit;
     }
-
 }

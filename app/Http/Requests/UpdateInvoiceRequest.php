@@ -1,11 +1,10 @@
-<?php namespace app\Http\Requests;
+<?php
 
-use Auth;
-use App\Http\Requests\Request;
-use Illuminate\Validation\Factory;
-use App\Models\Invoice;
+namespace App\Http\Requests;
 
-class UpdateInvoiceRequest extends Request
+use App\Models\Client;
+
+class UpdateInvoiceRequest extends InvoiceRequest
 {
     /**
      * Determine if the user is authorized to make this request.
@@ -14,7 +13,7 @@ class UpdateInvoiceRequest extends Request
      */
     public function authorize()
     {
-        return true;
+        return $this->entity() && $this->user()->can('edit', $this->entity());
     }
 
     /**
@@ -24,18 +23,33 @@ class UpdateInvoiceRequest extends Request
      */
     public function rules()
     {
-        if ($this->action == ACTION_ARCHIVE) {
+        if (! $this->entity()) {
             return [];
         }
 
-        $publicId = $this->route('invoices');
-        $invoiceId = Invoice::getPrivateId($publicId);
+        $invoiceId = $this->entity()->id;
 
         $rules = [
+            'client' => 'required',
             'invoice_items' => 'valid_invoice_items',
-            'invoice_number' => 'unique:invoices,invoice_number,'.$invoiceId.',id,account_id,'.Auth::user()->account_id,
+            'invoice_number' => 'required|unique:invoices,invoice_number,' . $invoiceId . ',id,account_id,' . $this->user()->account_id,
             'discount' => 'positive',
+            'invoice_date' => 'required',
+            //'due_date' => 'date',
+            //'start_date' => 'date',
+            //'end_date' => 'date',
         ];
+
+        if ($this->user()->account->client_number_counter) {
+            $clientId = Client::getPrivateId(request()->input('client')['public_id']);
+            $rules['client.id_number'] = 'unique:clients,id_number,'.$clientId.',id,account_id,' . $this->user()->account_id;
+        }
+
+        /* There's a problem parsing the dates
+        if (Request::get('is_recurring') && Request::get('start_date') && Request::get('end_date')) {
+            $rules['end_date'] = 'after' . Request::get('start_date');
+        }
+        */
 
         return $rules;
     }
